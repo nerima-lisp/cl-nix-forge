@@ -16,6 +16,16 @@
   # `watch-forward-dependencies-*/` directories from local runs, none of
   # which any denylist written before those tools existed could have named.
   #
+  # An allowlist by EXTENSION narrows that, it does not close it, and the
+  # difference matters to anyone reading this as a promise. Of the two
+  # directories above, `coverage-report-*/` is excluded (it holds HTML) and
+  # `watch-forward-dependencies-*/` is NOT (it holds generated `.lisp`), so
+  # `nix build path:.` still rehashes after a local watch run. What does
+  # close it is the flake source being Git-backed: both directories are
+  # gitignored, so `nix build .#` and CI never see either. Measured on
+  # cl-weave by diffing the `path:` source against the Git-backed one --
+  # those directories were the whole difference.
+  #
   # Too restrictive, apparently. cl-prolog's filter re-includes `t/` with
   # the note that `cleanSourceFilter` drops it. It does not -- verified
   # against nixpkgs' `lib/sources.nix`, which has no rule matching `t`. The
