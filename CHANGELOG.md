@@ -14,6 +14,26 @@ three migrations, not the one that precedes them.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-30
+
+### Fixed
+
+- `mkPackageFlake` builds its generated `devShells.default` from the
+  check-enabled derivation, so a package whose sibling dependency is
+  test-only can actually load it under `nix develop`. Two of the three first
+  adopters had written the same `overrideOutputs` workaround, which is what
+  identified this as the library's defect rather than one package's quirk;
+  the third could never have caught it, being its own test framework with no
+  external test dependency. It costs no extra build — `mkShell`'s
+  `inputsFrom` takes inputs rather than outputs and subtracts the named
+  derivation, so the check-enabled derivation is never realised, while the
+  check dependencies it names are already built by `checks.default`.
+- `mkLispSource`'s doc comment claimed an allowlist stops a local test run
+  from invalidating the build. It narrows that, it does not close it: an
+  allowlist by extension excludes an artefact directory of HTML but not one
+  of generated `.lisp`. What closes it is the flake source being Git-backed.
+  The claim is narrowed to what is true.
+
 ## [0.3.0] - 2026-07-30
 
 Everything here was found by APPLYING the library to a real repository for
@@ -173,7 +193,8 @@ library does rather than what changed, since there is no prior version.
 - Only `sbcl` and `ecl` have rows in the implementation table.
 - The library has no consumers yet. See the note above about `1.0.0`.
 
-[Unreleased]: https://github.com/nerima-lisp/cl-nix-forge/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/nerima-lisp/cl-nix-forge/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/nerima-lisp/cl-nix-forge/releases/tag/v0.4.0
 [0.3.0]: https://github.com/nerima-lisp/cl-nix-forge/releases/tag/v0.3.0
 [0.2.0]: https://github.com/nerima-lisp/cl-nix-forge/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nerima-lisp/cl-nix-forge/releases/tag/v0.1.0
