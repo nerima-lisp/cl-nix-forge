@@ -78,9 +78,11 @@ library does rather than what changed, since there is no prior version.
 
 ### Known gaps
 
-- `mkExecutable`'s `asdf:program-op` path is not exercised on
-  `aarch64-darwin`: the Darwin fallback triggers for SBCL, and every example
-  uses SBCL. `x86_64-linux` CI is the first machine to execute it.
+- `mkExecutable`'s two delivery paths are never verified by the same machine,
+  and CI covers only one of them. The branch is `isDarwin && sbcl`, so a
+  Linux runner always takes `asdf:program-op` and an aarch64-darwin developer
+  always takes the `save-lisp-and-die` fallback. CI is `x86_64-linux` only,
+  which leaves the Darwin fallback resting on local `nix flake check` alone.
 - Only `sbcl` and `ecl` have rows in the implementation table.
 - The library has no consumers yet. See the note above about `1.0.0`.
 
