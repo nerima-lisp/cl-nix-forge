@@ -13,6 +13,18 @@
 ;;;; conforming package needs no `asdf:test-system` route at all, and this
 ;;;; suite passing is proof the preset never took one.
 
+;;;; The exported system also declares how to deliver itself -- cl-weave's
+;;;; shape, where one system is both the library a sibling depends on and the
+;;;; binary the flake ships. That is what lets `mkExecutable { args =
+;;;; ctx.lispDerivationArgs; }` be a LITERAL round trip in default.nix, with
+;;;; nothing overridden.
+;;;;
+;;;; `:module "src"` rather than a system-wide `:pathname "src"`: the latter
+;;;; would move `:build-pathname` into src/ as well, and
+;;;; `mkExecutable`'s default `programPath` -- which is only consulted on the
+;;;; `program-op` delivery path, i.e. the one no Darwin host runs -- would
+;;;; then look in the wrong place.
+
 (defsystem "forge-preset"
   :description "Package exercising cl-nix-forge's org flake preset end to end"
   :author "takeokunn <bararararatty@gmail.com>"
@@ -20,9 +32,12 @@
   :license "MIT"
   :version "0.5.3"
   :homepage "https://github.com/nerima-lisp/cl-nix-forge"
-  :pathname "src"
-  :serial t
-  :components ((:file "forge-preset")))
+  :build-operation "program-op"
+  :build-pathname "forge-preset"
+  :entry-point "forge-preset::image-entry-point"
+  :components ((:module "src"
+                :serial t
+                :components ((:file "forge-preset")))))
 
 (defsystem "forge-preset/test"
   :description "Test system for forge-preset"

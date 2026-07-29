@@ -30,6 +30,12 @@ let
     pkgsFor = _: pkgs;
     forgeFor = _: cl;
     timeoutSeconds = 300;
+    # support/ is a SIBLING package that happens to live under this root, not
+    # part of it. Excluding it is what makes the delivery checks below
+    # meaningful: `forge-preset-support` is then reachable only as a
+    # `lispDependencies` entry, never as a system ASDF stumbles over in the
+    # package's own tree.
+    sourceExclude = [ ./support ];
     meta = {
       description = "Package exercising cl-nix-forge's org flake preset end to end";
       license = lib.licenses.mit;
@@ -144,6 +150,68 @@ let
     };
   };
 
+  # The dependency the delivered binary must carry. Built from its own root,
+  # so its sources are in a store path of their own -- which is what the
+  # `installSource` checks below need in order to tell "the image found the
+  # tree shipped with it" apart from "the image found something".
+  support = cl.lispDerivation {
+    lispSystem = "forge-preset-support";
+    version = cl.fromAsdSystem ./support/forge-preset-support.asd;
+    src = cl.mkLispSource { root = ./support; };
+  };
+
+  # THE case the `executable` argument exists for. Everything the delivery
+  # needs -- pname, version, src, meta and the `lispDependencies` entry --
+  # comes from the preset's own resolved arguments; the only things spelled
+  # here are the ones genuinely specific to the binary.
+  #
+  # `lispSystem` is overridden because this package's CLI is a separate ASDF
+  # system (cl-prolog's and cl-json-kit's shape); cl-weave's, where the
+  # exported system delivers itself, needs no override at all and is covered
+  # by the round-trip instance below.
+  withCli = preset {
+    docs.root = ./docs;
+    lispDependencies = _: [ support ];
+    executable = {
+      pname = "forge-preset-cli";
+      lispSystem = "forge-preset-cli";
+      dynamicSpaceSize = 2048;
+      installSource = true;
+    };
+  };
+
+  cliProgram = withCli.apps.${system}.default.program;
+
+  # No `installSource`, everything else identical: the negative control for
+  # the layout assertions. Without it, a check asserting the delivered tree
+  # exists would pass just as well against a `mkExecutable` that installed
+  # sources unconditionally -- which is a different, unrequested contract.
+  # The `pname` deliberately MATCHES the instance above, so the two
+  # deliveries share one compile of `forge-preset-cli` and differ only in the
+  # delivery step under test.
+  withCliNoSource = preset {
+    lispDependencies = _: [ support ];
+    executable = {
+      pname = "forge-preset-cli";
+      lispSystem = "forge-preset-cli";
+      dynamicSpaceSize = 2048;
+    };
+  };
+
+  # `ctx.lispDerivationArgs` handed straight back to `mkExecutable`, with
+  # NOTHING overridden -- the escape hatch a caller falls back to when the
+  # `executable` argument cannot express their delivery. If this stops being
+  # a complete `lispDerivation` argument set, this call stops building.
+  roundTripped =
+    (preset {
+      extraOutputs = ctx: {
+        packages.round-tripped = ctx.cl.mkExecutable {
+          args = ctx.lispDerivationArgs;
+          installSource = true;
+        };
+      };
+    }).packages.${system}.round-tripped;
+
   # Never an output for an undeclared system. Only the KEY SETS are forced
   # below, so naming a system this host cannot build costs nothing.
   twoSystems = preset {
@@ -160,6 +228,16 @@ let
     candidate: (builtins.tryEval (builtins.attrNames candidate.checks.${system})).success;
   packageVersionEvaluates =
     candidate: (builtins.tryEval candidate.packages.${system}.default.version).success;
+
+  # `.outPath`, where the helper above reads `.version`, and the difference is
+  # load-bearing: `mkDerivation` attaches `version` to the RESULT rather than
+  # to the derivation, so reading it forces the attrset (and any `assert`
+  # guarding it) but not the build script. A guard that lives inside the
+  # script -- `mkExecutable`'s duplicate-source-directory check does -- is
+  # only reached by forcing the store path. Reading `.version` instead
+  # reports success and proves nothing, which is how this was found.
+  packagePathEvaluates =
+    candidate: (builtins.tryEval candidate.packages.${system}.default.outPath).success;
 
   # Proving a BUILD failure takes care: a derivation that fails is not a check
   # that passes, and `tryEval` sees only evaluation errors. This runs the real
@@ -209,6 +287,7 @@ in
   packages.forge-preset = flake.packages.${system}.default;
   packages.forge-preset-docs = flake.packages.${system}.docs;
   packages.forge-preset-repo-rooted-docs = repoRootedDocs.packages.${system}.docs;
+  packages.forge-preset-cli = withCli.packages.${system}.default;
 
   devShells.forge-preset = flake.devShells.${system}.default;
 
@@ -438,6 +517,257 @@ in
       !(builtins.hasAttr "aarch64-linux" twoSystems.packages)
     ) "an undeclared system reached packages";
     pkgs.runCommand "org-preset-emits-only-declared-systems" { } "touch $out";
+
+  # D-1. The defect: `mkPackageFlake` computed the package's `lispDerivation`
+  # arguments and exposed only the RESULT, so a caller delivering a CLI from
+  # `overrideOutputs` had to re-spell pname, version, src, meta -- and every
+  # `lispDependencies` entry. Forgetting the last of those produces a binary
+  # that is simply missing a dependency, with nothing to notice it.
+  #
+  # So the assertion is not "a binary was produced" but "the binary can USE a
+  # dependency that was declared once, on the `mkPackageFlake` call". It runs
+  # from a scratch directory, because a run inside the source tree could
+  # resolve `forge-preset-support` from the working directory and prove
+  # nothing.
+  checks.org-preset-executable-carries-dependencies =
+    pkgs.runCommand "org-preset-executable-carries-dependencies" { cli = cliProgram; }
+      ''
+        export HOME="$TMPDIR/home"
+        mkdir -p "$HOME" "$TMPDIR/elsewhere"
+        cd "$TMPDIR/elsewhere"
+
+        # Matched by PREFIX, never by line number: the image compiles a system
+        # on this path, and a compiler note on stdout would otherwise shift
+        # every assertion by a line.
+        "$cli" > output
+        cat output
+        grep -qx "support=FORGE-PRESET-SUPPORT-REACHED-THE-IMAGE" output
+        grep -qx "preset=forge-preset builds images" output
+        touch "$out"
+      '';
+
+  # D-2. A delivered image could not find the sources shipped with it,
+  # because nothing shipped any: `mkExecutable` published `$out/bin` and, on
+  # the Darwin fallback, a core in an intermediate derivation no consumer
+  # could name. The image's own discovery therefore fell through to the
+  # build-time source directory and the binary died on the first system it
+  # re-loaded.
+  #
+  # Three things are asserted, and all three are needed. The LAYOUT, because
+  # that is the written contract. The RUN, from a directory that is not the
+  # source tree, because the layout existing does not mean the image can
+  # anchor on it -- and on a Darwin host the image is a bare `.core`, i.e.
+  # the delivery path where `$out` is not what the image sees at all. And the
+  # NEGATIVE control: the same binary delivered without `installSource` must
+  # fail, or the run above would pass against any image that found sources
+  # some other way.
+  checks.org-preset-executable-installs-its-own-sources =
+    pkgs.runCommand "org-preset-executable-installs-its-own-sources"
+      {
+        cli = cliProgram;
+        delivered = withCli.packages.${system}.default;
+        bare = withCliNoSource.packages.${system}.default;
+        supportSrc = support;
+      }
+      ''
+        export HOME="$TMPDIR/home"
+        mkdir -p "$HOME" "$TMPDIR/elsewhere"
+
+        installed="$delivered/share/common-lisp/source"
+        # The delivered system's own tree...
+        test -f "$installed/forge-preset-cli/forge-preset.asd"
+        test -f "$installed/forge-preset-cli/forge-preset-runtime.asd"
+        # ... and its whole resolved dependency closure, each in a directory
+        # of its own. A system whose sources are findable but whose
+        # dependencies' are not fails one `asdf:load-system` later, which is
+        # the same bug with a longer fuse.
+        test -f "$installed/forge-preset-support/forge-preset-support.asd"
+
+        # Nothing installed unless asked.
+        test ! -e "$bare/share/common-lisp"
+
+        cd "$TMPDIR/elsewhere"
+        "$cli" > output
+        cat output
+
+        # The image anchored on a real installed prefix -- not on the build
+        # sandbox its ASDF configuration was frozen with, which is exactly
+        # what the last-resort fallback would have returned. Matched by
+        # PREFIX, never by line number: the image compiles a system on this
+        # path, and a compiler note on stdout would shift every line.
+        root="$(sed -n 's/^source-root=//p' output)"
+        case "$root" in
+          /nix/store/*/share/common-lisp/source/) ;;
+          *)
+            echo "cl-nix-forge example: image resolved its source root to $root" >&2
+            exit 1
+            ;;
+        esac
+        test -f "$root/forge-preset-cli/forge-preset.asd"
+
+        # ... and really loaded a system out of it: `forge-preset-runtime` is
+        # in no image, and pulls in both the delivered tree and the separate
+        # store path the dependency's sources were installed from.
+        grep -qx "runtime=FORGE-PRESET-SUPPORT-REACHED-THE-IMAGE|forge-preset builds a system loaded at run time" output
+
+        # The negative control, run last so its failure cannot be mistaken
+        # for one of the assertions above.
+        if "$bare/bin/forge-preset-cli" > bare-output 2>&1; then
+          echo "cl-nix-forge example: a delivery without installSource still found a source tree" >&2
+          cat bare-output >&2
+          exit 1
+        fi
+        grep -q "no source tree installed beside this image" bare-output
+
+        touch "$out"
+      '';
+
+  # The escape hatch, kept honest: the resolved argument attrset really is a
+  # complete `lispDerivation` call, so a caller whose delivery the
+  # `executable` argument cannot express still spells the package's identity
+  # exactly once. Nothing is overridden here -- if `ctx.lispDerivationArgs`
+  # lost an entry, this would stop building rather than quietly deliver
+  # something different.
+  #
+  # D-3 rides along: the delivered store path carries the version from the
+  # .asd, where `runCommand outputName` used to drop it and leave two
+  # releases indistinguishable by path.
+  checks.org-preset-executable-round-trips-package-args =
+    assert lib.assertMsg (
+      roundTripped.version == "0.5.3"
+    ) "the delivered executable did not carry the .asd's version";
+    assert lib.assertMsg (
+      roundTripped.pname == "forge-preset"
+    ) "the delivered executable did not carry the package's pname";
+    pkgs.runCommand "org-preset-executable-round-trips-package-args"
+      {
+        delivered = roundTripped;
+        cli = withCli.packages.${system}.default;
+      }
+      ''
+        export HOME="$TMPDIR/home"
+        mkdir -p "$HOME" "$TMPDIR/elsewhere"
+        cd "$TMPDIR/elsewhere"
+
+        test "$("$delivered/bin/forge-preset")" = "forge-preset builds a delivered image"
+
+        for path in "$delivered" "$cli"; do
+          case "$path" in
+            *-forge-preset-0.5.3|*-forge-preset-cli-0.5.3) ;;
+            *)
+              echo "cl-nix-forge example: delivered executable is named $path" >&2
+              exit 1
+              ;;
+          esac
+        done
+        touch "$out"
+      '';
+
+  # Where the delivery lands in the output table, and what it does NOT
+  # displace. Every assertion is paired with the same fact on the instance
+  # that declares no `executable`, because a preset that ignored the argument
+  # and one that always delivered would each satisfy half of this.
+  checks.org-preset-executable-output-wiring =
+    assert lib.assertMsg (
+      withCli.packages.${system}.default.meta.mainProgram == "forge-preset-cli"
+    ) "packages.default is not the delivered executable";
+    assert lib.assertMsg (
+      bare.packages.${system}.default.pname == "forge-preset"
+    ) "control failed: without `executable`, packages.default is not the ASDF system";
+
+    # The library is still exported under its own name -- that is the entry a
+    # downstream `lispDependencies` needs, and delivering a binary must not
+    # take it away.
+    assert lib.assertMsg (
+      withCli.packages.${system}.forge-preset.pname == "forge-preset"
+    ) "packages.<pname> is no longer the ASDF system";
+
+    assert lib.assertMsg (
+      withCli.apps.${system}.default.program == withCli.apps.${system}.forge-preset.program
+    ) "apps.<pname> is not the same CLI as apps.default";
+    assert lib.assertMsg (
+      withCli.apps.${system}.default.meta.mainProgram == "forge-preset-cli"
+    ) "apps.default is not the delivered CLI";
+    assert lib.assertMsg (
+      withCli.apps.${system}.test.meta.mainProgram == "forge-preset-test"
+    ) "the delivery replaced apps.test as well as apps.default";
+    assert lib.assertMsg (
+      bare.apps.${system}.default.program == bare.apps.${system}.test.program
+    ) "control failed: without `executable`, apps.default is not apps.test";
+    assert lib.assertMsg (
+      !(builtins.hasAttr "forge-preset" bare.apps.${system})
+    ) "a package declaring no executable still got apps.<pname>";
+
+    # ctx.executable is the delivered binary itself, so the several
+    # `ctx -> ...` functions that need it (an override for packages.default,
+    # an extra check's argv) name one value instead of each rebuilding it
+    # from identical arguments and trusting that to be the same derivation.
+    assert lib.assertMsg (
+      (preset {
+        lispDependencies = _: [ support ];
+        executable = {
+          pname = "forge-preset-cli";
+          lispSystem = "forge-preset-cli";
+          dynamicSpaceSize = 2048;
+        };
+        extraOutputs = ctx: {
+          checks.ctx-executable = ctx.executable;
+        };
+      }).checks.${system}.ctx-executable == withCliNoSource.packages.${system}.default
+    ) "ctx.executable is not the derivation the preset delivered";
+    assert lib.assertMsg (
+      (preset { extraOutputs = ctx: { checks.ctx-executable = ctx.package; }; })
+      .checks.${system}.ctx-executable == bare.packages.${system}.default
+    ) "control failed: an unmodified extraOutputs check did not round trip";
+
+    pkgs.runCommand "org-preset-executable-output-wiring" { } "touch $out";
+
+  # Two ways to ask for a delivery that cannot mean what it says, each paired
+  # with a positive control -- `tryEval` reports `success` and never the
+  # message, so a misspelled subject fails exactly like the defect.
+  checks.org-preset-executable-argument-guards =
+    assert lib.assertMsg (packageVersionEvaluates (preset {
+      executable = {
+        lispSystem = "forge-preset-cli";
+        dynamicSpaceSize = 2048;
+      };
+    })) "control failed: a well-formed `executable` was rejected";
+
+    # `executable.args` would REPLACE the computed attrset wholesale, which is
+    # the defect itself wearing the fix's clothes: a re-spelled `args` is once
+    # again free to omit `lispDependencies`.
+    assert
+      !(packageVersionEvaluates (preset {
+        executable = {
+          args = {
+            pname = "smuggled";
+            lispSystem = "forge-preset-cli";
+            src = ./.;
+          };
+        };
+      }));
+
+    # `installSource` gives each shipped tree a directory named after its
+    # package, so a delivery whose name collides with one of its own
+    # dependencies would otherwise install one of them over the other.
+    assert lib.assertMsg (packagePathEvaluates (preset {
+      lispDependencies = _: [ support ];
+      executable = {
+        pname = "forge-preset-cli";
+        lispSystem = "forge-preset-cli";
+        installSource = true;
+      };
+    })) "control failed: a non-colliding installSource delivery was rejected";
+    assert
+      !(packagePathEvaluates (preset {
+        lispDependencies = _: [ support ];
+        executable = {
+          pname = "forge-preset-support";
+          lispSystem = "forge-preset-cli";
+          installSource = true;
+        };
+      }));
+    pkgs.runCommand "org-preset-executable-argument-guards" { } "touch $out";
 
   # The generated overlay publishes the package under its own pname, and
   # nothing else -- `packages.docs` must not become `pkgs.docs`.

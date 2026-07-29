@@ -37,6 +37,60 @@
   # fallback path too, read back via ASDF's own `component-entry-point` at
   # build time rather than duplicated in Nix.
   #
+  # WHAT `$out` CONTAINS, AND WHAT A DELIVERED IMAGE MAY ASSUME
+  #
+  # This contract is written down because its absence was a bug. cl-weave's
+  # image entry point resolves its ASDF source root at run time by looking
+  # for `share/common-lisp/source/` under the prefix its own
+  # `sb-ext:*runtime-pathname*`/`*core-pathname*` sits in -- the layout every
+  # nerima-lisp package and nixpkgs' own Lisp modules use -- and this
+  # function published `$out/bin` and nothing else. Both sides were
+  # individually correct and disagreed silently: the discovery found nothing,
+  # the image fell back to the build-time `asdf:system-source-directory`, and
+  # the binary died with "Failed to find the TRUENAME of
+  # /nix/var/nix/builds/nix-.../src/package.lisp" the first time it re-loaded
+  # one of its own systems.
+  #
+  # `$out` always contains:
+  #
+  #   $out/bin/<pname>   the entry point, and `meta.mainProgram`.
+  #
+  # `$out` contains, when `installSource` is true:
+  #
+  #   $out/share/common-lisp/source/<pname>/     `args.src`, verbatim
+  #   $out/share/common-lisp/source/<dep>/       one directory per entry of
+  #                                              the resolved dependency
+  #                                              closure, named by its
+  #                                              `pname`
+  #
+  # so that ONE `(:tree "<prefix>/share/common-lisp/source/")` registry entry
+  # resolves the delivered system and everything it loads. The closure is
+  # installed too, not just the system's own tree: a system whose sources are
+  # findable but whose dependencies' are not fails at exactly the same place,
+  # one `asdf:load-system` later.
+  #
+  # A delivered image may therefore assume that `share/common-lisp/source/`
+  # exists under the installation prefix of the file it is running out of --
+  # the parent of the directory holding `sb-ext:*runtime-pathname*` on the
+  # `program-op` path, and of the one holding `sb-ext:*core-pathname*` on the
+  # Darwin fallback -- and nothing more. Both anchors are covered
+  # deliberately: on the Darwin path the running image is a bare `.core` in
+  # an intermediate derivation, so a source tree installed only into `$out`
+  # would be in a directory that image has no way to name. The core
+  # derivation gets the real tree and `$out` gets a symlink to it, which
+  # makes the two views the same directory rather than two copies that could
+  # drift.
+  #
+  # What is NOT promised: on the `program-op` path `$out` also holds the
+  # whole built tree at its root, because that is where ASDF wrote the
+  # program and the delivery copies the derivation wholesale. That is an
+  # artifact, not an interface -- the Darwin fallback has no such thing.
+  # `share/common-lisp/source/` is the only source layout to build on.
+  #
+  # `installSource` defaults to false: it puts the source tree and its whole
+  # dependency closure into the delivered runtime closure, which a binary
+  # that never re-loads a system at run time should not pay for.
+  #
   # WHAT NIX OWNS AND WHAT THE .asd OWNS
   #
   # The .asd owns everything about *what* is built: `:build-operation`,
@@ -90,6 +144,11 @@
   #                        in the system definition. This option is for the
   #                        remaining case where the *dump* needs a module
   #                        the system itself does not depend on.
+  #   installSource     :: Bool ? false -- install `args.src` and the
+  #                        resolved dependency closure under the delivered
+  #                        image's own prefix, as described above, so an
+  #                        image that re-loads a system at run time can find
+  #                        one. Costs the whole source closure at runtime.
   mkExecutable =
     {
       lispDerivation,
@@ -98,6 +157,7 @@
       programPath ? null,
       dynamicSpaceSize ? null,
       imageRequires ? [ ],
+      installSource ? false,
     }:
     let
       baseLisp = args.lisp or pkgs.sbcl;
@@ -126,6 +186,66 @@
           builtins.head requestedLispSystems;
       outputName = args.pname or lispSystem;
       needsDarwinWorkaround = pkgs.stdenv.hostPlatform.isDarwin && lispImplementation == "sbcl";
+
+      # The delivery is the package a release is actually inspected as, so it
+      # carries the version it was built from: `runCommand outputName` alone
+      # produced `...-cl-weave` where the hand-written flake it replaced
+      # produced `...-cl-weave-1.0.1`, and a store path that cannot be told
+      # apart from the previous release's is a worse diagnostic than no store
+      # path at all. `pname`/`version` are set alongside `name` as well, so
+      # `lib.getName`/`lib.getVersion` -- and therefore `mkOverlay`, which
+      # names its attributes with them -- read the identity off the
+      # derivation rather than re-parsing a joined string.
+      version = args.version or null;
+      deliveryName = if version == null then outputName else "${outputName}-${version}";
+      identityAttrs = {
+        pname = outputName;
+      }
+      // lib.optionalAttrs (version != null) { inherit version; };
+
+      # `share/common-lisp/source/<name>/`: nixpkgs' own Lisp modules and
+      # every nerima-lisp package put sources there, and a delivered image
+      # looking for its own siblings looks there. One directory per tree, so
+      # a single `(:tree ...)` entry over the parent finds all of them and
+      # ASDF's own recursive search does the rest.
+      sourceInstallDir = "share/common-lisp/source";
+
+      # Shell that installs the delivered system's sources, plus every
+      # already-built dependency in its closure, into `$out`. `dependencies`
+      # is the derivation's own resolved `ancestry.deps` -- the same list
+      # `lispDerivation` turns into CL_SOURCE_REGISTRY -- so what the image
+      # can find at run time is exactly what it compiled against.
+      installSourceCommands =
+        dependencies:
+        let
+          trees = [
+            {
+              name = outputName;
+              path = args.src;
+            }
+          ]
+          ++ map (dependency: {
+            name = lib.getName dependency;
+            path = dependency;
+          }) dependencies;
+          names = map (tree: tree.name) trees;
+          duplicated = lib.unique (lib.filter (name: lib.count (other: other == name) names > 1) names);
+        in
+        assert lib.assertMsg (duplicated == [ ])
+          "cl-nix-forge mkExecutable: `installSource` gives every shipped source tree its own directory under ${sourceInstallDir}/, but ${
+            lib.concatMapStringsSep ", " (name: "`${name}`") duplicated
+          } names more than one of them. Give the delivered executable or the colliding dependency a distinct `pname`.";
+        ''
+          mkdir -p "$out/${sourceInstallDir}"
+        ''
+        + lib.concatMapStrings (tree: ''
+          if [ -e "$out/${sourceInstallDir}/${tree.name}" ]; then
+            echo "cl-nix-forge mkExecutable: $out/${sourceInstallDir}/${tree.name} already exists; the delivered tree ships that layout itself" >&2
+            exit 1
+          fi
+          cp -R ${tree.path} "$out/${sourceInstallDir}/${tree.name}"
+          chmod -R u+w "$out/${sourceInstallDir}/${tree.name}"
+        '') trees;
 
       # Options that act on the Lisp that performs the dump. They are
       # applied by wrapping that Lisp rather than by extending the ASDF
@@ -174,14 +294,17 @@
           resolvedProgramPath = if programPath == null then lispSystem else programPath;
           wrapperArgs = native.nativeLibraryWrapperArgs (delivered.nativeLibraries or [ ]);
         in
-        pkgs.runCommand outputName
-          {
-            nativeBuildInputs = [ pkgs.makeWrapper ];
-            passthru = delivered.passthru or { };
-            meta = (delivered.meta or { }) // {
-              mainProgram = outputName;
-            };
-          }
+        pkgs.runCommand deliveryName
+          (
+            {
+              nativeBuildInputs = [ pkgs.makeWrapper ];
+              passthru = delivered.passthru or { };
+              meta = (delivered.meta or { }) // {
+                mainProgram = outputName;
+              };
+            }
+            // identityAttrs
+          )
           ''
             cp -R ${delivered}/. "$out"
             chmod -R u+w "$out"
@@ -195,6 +318,14 @@
             mv "$program" "$original"
             makeWrapper "$original" "$out/bin/${outputName}" \
               ${lib.concatStringsSep " " (map lib.escapeShellArg wrapperArgs)}
+            ${
+              # This path's image IS `$out/bin/<pname>.cl-nix-forge-unwrapped`
+              # (the wrapper execs it, and SBCL resolves
+              # `*runtime-pathname*` from the running executable), so `$out`
+              # is the prefix the image anchors on and the sources belong
+              # here.
+              lib.optionalString installSource (installSourceCommands (delivered.ancestry.deps or [ ]))
+            }
           ''
       else
         let
@@ -229,6 +360,18 @@
               runHook preInstall
               mkdir -p "$out/lib"
               cp cl-nix-forge-delivered.core "$out/lib/${outputName}.core"
+              ${
+                # The sources go HERE, not (only) into the delivery's own
+                # `$out`. The image this path delivers is the bare core in
+                # THIS derivation, so `sb-ext:*core-pathname*` names
+                # `${placeholder "out"}/lib/<pname>.core` and the prefix it
+                # anchors on is this output. A tree installed only beside
+                # the wrapper would sit in a directory the running image
+                # cannot name -- which is precisely the shape of the bug
+                # this option exists to fix, and the reason the Darwin path
+                # is the one worth proving.
+                lib.optionalString installSource (installSourceCommands (loaded.ancestry.deps or [ ]))
+              }
               runHook postInstall
             '';
           };
@@ -262,22 +405,36 @@
 
           wrapperArgs = native.nativeLibraryWrapperArgs (loaded.nativeLibraries or [ ]);
         in
-        pkgs.runCommand outputName
-          {
-            nativeBuildInputs = [ pkgs.makeWrapper ];
-            passthru = {
-              inherit (loaded) nativeLibraries;
-            };
-            meta = (loaded.meta or { }) // {
-              mainProgram = outputName;
-            };
-          }
+        pkgs.runCommand deliveryName
+          (
+            {
+              nativeBuildInputs = [ pkgs.makeWrapper ];
+              passthru = {
+                inherit (loaded) nativeLibraries;
+              };
+              meta = (loaded.meta or { }) // {
+                mainProgram = outputName;
+              };
+            }
+            // identityAttrs
+          )
           ''
             mkdir -p "$out/bin"
             makeWrapper ${lib.getExe baseLisp} "$out/bin/${outputName}" \
               --inherit-argv0 \
               --add-flags ${lib.escapeShellArg (lib.concatStringsSep " " deliveredFlags)} \
               ${lib.concatStringsSep " " (map lib.escapeShellArg wrapperArgs)}
+            ${
+              # A symlink rather than a second copy: the contract is that
+              # `$out/share/common-lisp/source/` is what the image finds, and
+              # a link makes that the SAME directory instead of two trees
+              # that could drift apart. The core is already a runtime
+              # reference of this output through the wrapper's `--core`.
+              lib.optionalString installSource ''
+                mkdir -p "$out/${builtins.dirOf sourceInstallDir}"
+                ln -s ${core}/${sourceInstallDir} "$out/${sourceInstallDir}"
+              ''
+            }
           ''
     );
 }

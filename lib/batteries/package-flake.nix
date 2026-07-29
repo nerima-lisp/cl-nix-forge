@@ -60,6 +60,36 @@ let
     "doCheck"
   ];
 
+  # `executable` entries that are not passed to `mkExecutable` as-is but
+  # replace one entry of the computed `args`. Everything else in
+  # `executable` is a `mkExecutable` argument and is forwarded untouched --
+  # including a misspelling, which `mkExecutable`'s own argument pattern
+  # rejects by name.
+  executableArgOverrides = [
+    "pname"
+    "lispSystem"
+    "meta"
+  ];
+
+  # `args` and `lispDerivation` are what `mkPackageFlake` supplies. Passing
+  # `args` here would REPLACE the computed attrset wholesale -- silently
+  # reintroducing the exact defect the `executable` argument exists to
+  # remove, since a re-spelled `args` is once again free to omit
+  # `lispDependencies`. Rejected by name, with the honest escape hatch named
+  # in the message.
+  rejectOwnedExecutable =
+    { pname, given }:
+    let
+      clash = lib.intersectLists [
+        "args"
+        "lispDerivation"
+      ] (builtins.attrNames given);
+    in
+    lib.assertMsg (clash == [ ])
+      "cl-nix-forge mkPackageFlake (${pname}): `executable` may not set ${
+        lib.concatMapStringsSep ", " (name: "`${name}`") clash
+      } -- mkPackageFlake computes the delivery's `lispDerivation` arguments from its own, so that a dependency added here reaches the binary. Override `pname`, `lispSystem` or `meta` individually, or call `cl.mkExecutable { args = ctx.lispDerivationArgs // ...; }` yourself from `overrideOutputs`.";
+
   # Same rule for the docs site: its version is the .asd's, full stop.
   # `pname` and `meta` are NOT owned here -- a docs site legitimately carries
   # its own name and description, and `mkDocsSite` already takes both.
@@ -157,13 +187,15 @@ in
   # nothing else:
   #
   #   packages.<pname>   the ASDF system, via `lispDerivation`
-  #   packages.default   an alias for it
+  #   packages.default   an alias for it -- or the delivered CLI, when
+  #                      `executable != null`
   #   packages.docs      the mkdocs-material site (only when `docs != null`)
   #   checks.default     run-tests.lisp, via `mkScriptCheck`
   #   checks.formatting  the treefmt gate (only when `treefmt != null`)
   #   checks.docs        proves the --strict docs build (only when `docs != null`)
   #   apps.test          `nix run .#test`, via `mkTestApp`
-  #   apps.default       an alias for it
+  #   apps.default       an alias for it -- or the CLI, when `executable != null`
+  #   apps.<pname>       the CLI (only when `executable != null`)
   #   devShells.default  via `mkDevShell`
   #   formatter          the same treefmt eval `checks.formatting` uses
   #   overlays.default   via `mkOverlay` (unless `overlayPackages = [ ]`)
@@ -221,6 +253,33 @@ in
   #   packageArgs -- ctx -> attrs ? { }. Extra `lispDerivation` arguments
   #                  (`lispAsdPath`, `nativeLibraries`, `buildInputs`, ...).
   #
+  #   executable  -- attrs ? null. Deliver a CLI from THIS package and make
+  #                  it `packages.default`, `apps.default` and
+  #                  `apps.<pname>`. `{ dynamicSpaceSize = 4096; }` is a
+  #                  realistic call. Every argument `mkExecutable` takes
+  #                  except `args` and `lispDerivation` is accepted here
+  #                  (`dynamicSpaceSize`, `imageRequires`, `installSource`,
+  #                  `buildOperation`, `programPath`), plus `pname`,
+  #                  `lispSystem` and `meta`, which override the
+  #                  corresponding entry of the computed `args` -- a
+  #                  repository whose binary is built from a separate
+  #                  `<pkg>-cli` system, or installs under a different name
+  #                  than the library, says so with those three and nothing
+  #                  else.
+  #
+  #                  It exists because the alternative -- `overrideOutputs`
+  #                  calling `mkExecutable` -- has to re-spell `pname`,
+  #                  `version`, `src`, `meta` AND every `lispDependencies`
+  #                  entry, since this preset previously exposed only the
+  #                  RESULT of building them and never the arguments. Two
+  #                  sources of truth for the package's identity, inside the
+  #                  one function whose purpose is removing exactly that
+  #                  duplication -- and a dependency added to the
+  #                  `mkPackageFlake` call would reach the library and NOT
+  #                  the binary, silently. All three repositories being
+  #                  migrated deliver a CLI and would otherwise override the
+  #                  same two attributes identically.
+  #
   #   runner          -- String ? "run-tests.lisp", the org-standard entry
   #                      point. Drives both `checks.default` and `apps.test`,
   #                      so the command a contributor runs by hand and the
@@ -258,11 +317,31 @@ in
   #                  evaluation error.
   #
   # ctx :: { system, pkgs, cl, version, src } for the arguments that feed the
-  # package's own construction, plus { package, docs, generated } for the
-  # ones evaluated after it exists (`devShellPackages`, `extraOutputs`,
-  # `overrideOutputs`). `generated` is this preset's own output set for that
-  # system, so an override can wrap what it replaces
-  # (`generated.checks.default.overrideAttrs ...`) instead of rebuilding it.
+  # package's own construction, plus { package, docs, executable,
+  # lispDerivationArgs, generated } for the ones evaluated after it exists
+  # (`devShellPackages`, `extraOutputs`, `overrideOutputs`). `generated` is
+  # this preset's own output set for that system, so an override can wrap
+  # what it replaces (`generated.checks.default.overrideAttrs ...`) instead
+  # of rebuilding it.
+  #
+  # `ctx.lispDerivationArgs` is the exact attrset this preset handed
+  # `lispDerivation` -- which is also, by definition, what `mkExecutable`'s
+  # `args` wants -- so a caller whose delivery the `executable` argument
+  # cannot express writes `cl.mkExecutable { args = ctx.lispDerivationArgs;
+  # ... }` and still spells the package's identity once. It is NOT named
+  # `packageArgs`: that argument means "the EXTRA `lispDerivation` arguments
+  # this preset does not compute", and a context entry with the same name
+  # and the opposite meaning (all of them, resolved) is a trap.
+  #
+  # `ctx.executable` is the delivered binary itself, or `null`. cl-weave's
+  # migration needed the same CLI derivation in `overrideOutputs` (for
+  # `packages.default`) and in `extraOutputs` (for the argv of eleven
+  # checks), which are separate `ctx -> ...` functions, and defined a
+  # top-level `cliFor ctx` called from both -- relying on identical
+  # arguments producing an identical derivation. That works, and is not
+  # obvious. With `executable` set, both sites read `ctx.executable`
+  # instead, and it is the same derivation because it is literally the same
+  # value.
   mkPackageFlake =
     {
       self,
@@ -304,6 +383,7 @@ in
       lispDependencies ? _: [ ],
       lispCheckDependencies ? _: [ ],
       packageArgs ? _: { },
+      executable ? null,
 
       runner ? "run-tests.lisp",
       timeoutSeconds ? 600,
@@ -358,28 +438,62 @@ in
           resolvedCheckDependencies = lispCheckDependencies baseContext;
           resolvedPackageArgs = packageArgs baseContext;
 
-          package =
+          # Named, not inlined into the `lispDerivation` call: this attrset
+          # IS the package's identity, and anything else that has to build
+          # the same thing a second time (the `executable` below, or a
+          # caller's own `mkExecutable`) must be able to start from it
+          # rather than re-spell it. See `ctx.lispDerivationArgs`.
+          lispDerivationArgs =
             assert rejectOwned {
               inherit pname;
               argument = "packageArgs";
               owned = ownedPackageArgs;
               given = resolvedPackageArgs;
             };
-            cl.lispDerivation (
-              {
-                inherit
-                  pname
-                  version
-                  lispSystem
-                  meta
-                  ;
-                src = resolvedSrc;
-                lisp = resolvedLisp;
-                lispDependencies = resolvedDependencies;
-                lispCheckDependencies = resolvedCheckDependencies;
-              }
-              // resolvedPackageArgs
-            );
+            {
+              inherit
+                pname
+                version
+                lispSystem
+                meta
+                ;
+              src = resolvedSrc;
+              lisp = resolvedLisp;
+              lispDependencies = resolvedDependencies;
+              lispCheckDependencies = resolvedCheckDependencies;
+            }
+            // resolvedPackageArgs;
+
+          package = cl.lispDerivation lispDerivationArgs;
+
+          # The delivery is built from the package's OWN resolved arguments.
+          # That is the whole point: `lispDependencies` added to this
+          # `mkPackageFlake` call reach the binary by construction, instead
+          # of reaching only whatever the caller remembered to repeat.
+          deliveredExecutable =
+            if executable == null then
+              null
+            else
+              assert lib.assertMsg (builtins.isAttrs executable)
+                "cl-nix-forge mkPackageFlake (${pname}): `executable` must be an attrset of `mkExecutable` arguments (or null)";
+              assert rejectOwnedExecutable {
+                inherit pname;
+                given = executable;
+              };
+              cl.mkExecutable (
+                (removeAttrs executable executableArgOverrides)
+                // {
+                  args =
+                    lispDerivationArgs
+                    // builtins.intersectAttrs (lib.genAttrs executableArgOverrides (_: null)) executable;
+                }
+              );
+
+          # `mkApp` reads the program name and the description off the
+          # derivation, which carries the package's own `meta`, so there is
+          # nothing to spell here either.
+          executableApp =
+            if deliveredExecutable == null then null else cl.mkApp { drv = deliveredExecutable; };
 
           docsSite =
             if docs == null then
@@ -464,8 +578,14 @@ in
               '';
 
           generated = {
+            # `packages.<pname>` is the ASDF SYSTEM even when a CLI is
+            # delivered, because that is the entry a downstream
+            # `lispDependencies` needs; `packages.default` is what the
+            # overlay publishes and what `nix build .` produces, which for a
+            # package that ships a binary is the binary. cl-weave's
+            # hand-written flake made exactly that split by hand.
             packages = {
-              default = package;
+              default = if deliveredExecutable == null then package else deliveredExecutable;
               ${pname} = package;
             }
             // lib.optionalAttrs (docsSite != null) { docs = docsSite; };
@@ -478,10 +598,15 @@ in
               formatting = treefmtEval.config.build.check self;
             };
 
+            # `apps.test` is always the suite; only `apps.default` follows
+            # the delivery. `apps.<pname>` is the named spelling of the same
+            # CLI (`nix run .#cl-weave`), which every repository that ships
+            # one adds by hand.
             apps = {
               test = testApp;
-              default = testApp;
-            };
+              default = if executableApp == null then testApp else executableApp;
+            }
+            // lib.optionalAttrs (executableApp != null) { ${pname} = executableApp; };
 
             devShells.default = cl.mkDevShell {
               drv = package;
@@ -490,8 +615,9 @@ in
           };
 
           packageContext = baseContext // {
-            inherit package;
+            inherit package lispDerivationArgs;
             docs = docsSite;
+            executable = deliveredExecutable;
           };
 
           outputContext = packageContext // {

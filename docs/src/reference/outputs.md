@@ -29,10 +29,68 @@ packages.${system}.my-cli = cl.mkExecutable {
 | `programPath` | `null` | Where ASDF actually wrote the program, if not the system name |
 | `dynamicSpaceSize` | `null` | Megabytes of SBCL dynamic space |
 | `imageRequires` | `[ ]` | Implementation modules to `(require ...)` before the image is dumped |
+| `installSource` | `false` | Ship the sources under the delivered image's own prefix — see the contract below |
 
 `args.pname` controls the installed executable name and may differ from
 `lispSystem`. Exactly one system must be named, via `lispSystem` or a
 single-element `lispSystems`; anything else is an evaluation error.
+
+`args.version`, when present, reaches the store path
+(`…-my-cli-1.0.1`) and the derivation's `pname`/`version`, so a delivered
+binary can be told apart from the previous release's by path, and
+[`mkOverlay`](#mkoverlay) can name it without re-parsing anything.
+
+If you are writing a whole package's flake, `mkPackageFlake`'s `executable`
+argument calls this for you from the arguments it already resolved, so the
+package's `pname`, `version`, `src`, `meta` and `lispDependencies` are spelled
+once rather than twice. Reach for `mkExecutable` directly for a delivery that
+argument cannot express — and pass `args = ctx.lispDerivationArgs` when you do,
+rather than restating the package.
+
+### What `$out` contains, and what an image may assume
+
+This contract is written down because its absence was a bug: an image that
+resolved its own ASDF source root by looking for `share/common-lisp/source/`
+under its installation prefix found nothing, fell back to the build-time
+source directory, and died with `Failed to find the TRUENAME of
+/nix/var/nix/builds/nix-…/src/package.lisp` the first time it re-loaded one of
+its own systems. Both sides were individually correct and disagreed silently.
+
+`$out` always contains `$out/bin/<pname>` — the entry point, and
+`meta.mainProgram`.
+
+With `installSource = true` it also contains:
+
+```
+$out/share/common-lisp/source/<pname>/     args.src, verbatim
+$out/share/common-lisp/source/<dep>/       one directory per entry of the
+                                           resolved dependency closure
+```
+
+so that one `(:tree "<prefix>/share/common-lisp/source/")` registry entry
+resolves the delivered system and everything it loads. The dependency closure
+is installed too, not just the system's own tree: sources that are findable
+while their dependencies' are not fail at the same place, one
+`asdf:load-system` later.
+
+A delivered image may therefore assume that `share/common-lisp/source/` exists
+under the installation prefix of the file it is running out of — the parent of
+the directory holding `sb-ext:*runtime-pathname*` on the `program-op` path, and
+of the one holding `sb-ext:*core-pathname*` on the Darwin fallback — and
+nothing more. Both anchors are covered deliberately: on the Darwin fallback the
+running image is a bare `.core` inside an intermediate derivation, so a tree
+installed only into `$out` would sit somewhere that image cannot name. That
+derivation gets the real tree and `$out` gets a symlink to it, which makes the
+two views the same directory rather than two copies that can drift.
+
+What is **not** promised: on the `program-op` path `$out` also holds the whole
+built tree at its root, because that is where ASDF wrote the program and the
+delivery copies the derivation wholesale. That is an artifact, not an
+interface — the Darwin fallback has no such thing.
+
+`installSource` defaults to false because it puts the source tree and its whole
+dependency closure into the delivered runtime closure, which a binary that
+never re-loads a system at run time should not pay for.
 
 `programPath` exists because ASDF writes a program to the system's
 `:build-pathname`, which is not necessarily `$out/bin/<system>`. That

@@ -122,6 +122,12 @@ and `:build-pathname` have no Nix option here, because a system with two
 places to declare its own entry point has two places to disagree. See
 [`mkExecutable`](reference/outputs.md#mkexecutable).
 
+Add `installSource = true;` when the image loads a system at run time rather
+than only running what was dumped into it. It installs the sources and their
+dependency closure under the binary's own prefix, which is where an image
+looking for `share/common-lisp/source/` next to itself will find them; see
+[what `$out` contains](reference/outputs.md#what-out-contains-and-what-an-image-may-assume).
+
 ## The rest of a flake
 
 [Flake outputs and delivery](reference/outputs.md) covers `mkTestApp`
