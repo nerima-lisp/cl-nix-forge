@@ -18,6 +18,10 @@ let
     pname = "forge-preset";
     asd = ./forge-preset.asd;
     systems = [ system ];
+    # Required, not defaulted from `self`: a real flake's `self` is an attrset
+    # with an `outPath`, which `lib.fileset` rejects. See the argument's own
+    # comment in lib/batteries/package-flake.nix.
+    root = ./.;
     # flake.nix hands each example the `pkgs` and `cl` it built. Feeding them
     # straight back in is what makes this example test THAT library rather
     # than a second copy `mkPackageFlake` would otherwise re-import for

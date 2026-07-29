@@ -289,7 +289,13 @@ in
           pkgs = systemPkgs;
         },
 
-      root ? self,
+      # No default. `self` is the obvious one and it does NOT work: a flake's
+      # `self` is an attrset carrying an `outPath`, and `lib.fileset` refuses
+      # a string-like value for its root, so the failure surfaces from inside
+      # `mkLispSource` as a type error naming neither `self` nor this
+      # argument. A required `root = ./.` costs the caller one line and is
+      # the same directory as a path literal, which is what fileset needs.
+      root,
       src ? null,
       sourceInclude ? [ ],
       sourceExclude ? [ ],
