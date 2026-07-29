@@ -14,6 +14,52 @@ three migrations, not the one that precedes them.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-30
+
+### Added
+
+- `mkPackageFlake` — the nerima-lisp flake standard as a function call
+  instead of a template to copy. One call returns a package's whole output
+  set (`packages`, `checks`, `apps`, `devShells`, `formatter`, `overlays`)
+  from its declarations. It is the only module taking `lib` without `pkgs`:
+  every other module is instantiated for one `pkgs`, and a preset built that
+  way could only emit the single system it was instantiated for, so this one
+  takes `systems` and obtains a `pkgs` — and a cl-nix-forge — per declared
+  system itself. `extraOutputs` adds and `overrideOutputs` replaces, kept
+  separate so an intended override stays distinguishable from an accidental
+  name collision; a collision is an evaluation error.
+- Implementation table rows for `ccl`, `abcl`, `clisp` and `clasp`, joining
+  `sbcl` and `ecl`. CCL is why the rows carry their reasoning: it has no
+  `--script`, rejects a bare filename outright, and needs `--batch` to route
+  an unhandled condition to a non-zero exit — without which a failing suite
+  exits 0 and every test appears to pass.
+- This repository's own documentation site, built by its own `mkDocsSite`.
+
+### Changed
+
+- `mkCheckMatrix` decides availability from `lib.meta.availableOn` rather
+  than a platform list kept in this library, so one matrix can be written
+  once and used on every system — nixpkgs is the authority on where CCL
+  builds, and it changes. A platform skip, a caller's `skip` and an
+  `expectedFailure` remain three distinct things: conflating them would let
+  a real regression hide behind an implementation that cannot run on the
+  host. A package that IS available here but broken, unfree or insecure
+  still throws, exactly as it would anywhere else in nixpkgs.
+- README is a 136-line entry point, under the org standard's 150-line cap,
+  with the reference material moved to `docs/src/`.
+
+### Known gaps
+
+- `mkExecutable`'s two delivery paths are never verified by the same
+  machine. The branch is `isDarwin && sbcl`, so a Linux runner always takes
+  `asdf:program-op` and an aarch64-darwin developer always takes the
+  `save-lisp-and-die` fallback. CI is `x86_64-linux` only, which leaves the
+  Darwin fallback resting on local `nix flake check` alone.
+- `ccl`, `clisp` and `clasp` rows are unverified by execution on
+  aarch64-darwin, where nixpkgs reports all three unavailable. CI is the
+  first machine to run them.
+- No consumer has been migrated yet. See the note at the top about `1.0.0`.
+
 ## [0.1.0] - 2026-07-29
 
 First tagged release. Everything below is new; the sections describe what the
@@ -86,5 +132,6 @@ library does rather than what changed, since there is no prior version.
 - Only `sbcl` and `ecl` have rows in the implementation table.
 - The library has no consumers yet. See the note above about `1.0.0`.
 
-[Unreleased]: https://github.com/nerima-lisp/cl-nix-forge/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/nerima-lisp/cl-nix-forge/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/nerima-lisp/cl-nix-forge/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nerima-lisp/cl-nix-forge/releases/tag/v0.1.0
