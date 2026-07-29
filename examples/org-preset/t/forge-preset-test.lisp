@@ -13,4 +13,9 @@
   (let ((actual (forge-preset:describe-preset "flakes")))
     (unless (string= "forge-preset builds flakes" actual)
       (error "forge-preset:describe-preset returned ~S" actual)))
+  ;; The test-only sibling, USED rather than merely declared: a suite that
+  ;; only named `forge-preset-harness` in :DEPENDS-ON would still fail to load
+  ;; without it, but nothing would prove the code came along. Printed, so the
+  ;; dev-shell check can grep for it in the runner's own output.
+  (format t "~&harness=~A~%" (forge-preset-harness:harness-marker))
   t)

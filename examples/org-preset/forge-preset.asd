@@ -39,12 +39,18 @@
                 :serial t
                 :components ((:file "forge-preset")))))
 
+;;;; `forge-preset-harness` is a TEST-ONLY dependency, in the shape
+;;;; cl-json-kit and cl-prolog both have: it is named by the `/test` system
+;;;; and by nothing the library exports, so on the Nix side it reaches the
+;;;; build only through `lispCheckDependencies`. Anything that has to run
+;;;; this suite -- `checks.default`, `apps.test`, and `nix develop` -- must
+;;;; carry it; anything that merely builds the library must not.
 (defsystem "forge-preset/test"
   :description "Test system for forge-preset"
   :author "takeokunn <bararararatty@gmail.com>"
   :license "MIT"
   :version "0.5.3"
-  :depends-on ("forge-preset")
+  :depends-on ("forge-preset" "forge-preset-harness")
   :pathname "t"
   :serial t
   :components ((:file "forge-preset-test")))

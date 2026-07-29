@@ -13,6 +13,17 @@
 let
   system = pkgs.stdenv.hostPlatform.system;
 
+  # The two SIBLING packages that happen to live under this root but are not
+  # part of it. Named once, because the same list has to be the preset's
+  # `sourceExclude` and the exclusion the dev-shell probe's copy of the tree
+  # is built with -- a probe run in a tree that still contained them would
+  # resolve both from `$PWD` and prove nothing about either dependency
+  # argument.
+  siblingRoots = [
+    ./support
+    ./harness
+  ];
+
   common = {
     self = ./.;
     pname = "forge-preset";
@@ -30,12 +41,18 @@ let
     pkgsFor = _: pkgs;
     forgeFor = _: cl;
     timeoutSeconds = 300;
-    # support/ is a SIBLING package that happens to live under this root, not
-    # part of it. Excluding it is what makes the delivery checks below
-    # meaningful: `forge-preset-support` is then reachable only as a
-    # `lispDependencies` entry, never as a system ASDF stumbles over in the
-    # package's own tree.
-    sourceExclude = [ ./support ];
+    # Excluding the siblings is what makes the delivery and dev-shell checks
+    # below meaningful: `forge-preset-support` and `forge-preset-harness` are
+    # then reachable only as dependency ENTRIES, never as systems ASDF
+    # stumbles over in the package's own tree.
+    sourceExclude = siblingRoots;
+    # The test-only half of that pair, on every instance -- `forge-preset/test`
+    # depends on it, so the generated `checks.default`, `apps.test` and
+    # `devShells.default` all have to carry it and the package itself must
+    # not. This is cl-json-kit's and cl-prolog's exact shape (both depend on
+    # cl-weave for tests and nothing else), and it is the one argument whose
+    # resolved value `lispDerivation` drops when `doCheck` is false.
+    lispCheckDependencies = _: [ harness ];
     meta = {
       description = "Package exercising cl-nix-forge's org flake preset end to end";
       license = lib.licenses.mit;
@@ -160,6 +177,16 @@ let
     src = cl.mkLispSource { root = ./support; };
   };
 
+  # The sibling the SUITE needs. Reachable only through
+  # `common.lispCheckDependencies`, and therefore absent from every derivation
+  # built with `doCheck = false` -- including, before D-4 below, the shell
+  # `nix develop` drops you into.
+  harness = cl.lispDerivation {
+    lispSystem = "forge-preset-harness";
+    version = cl.fromAsdSystem ./harness/forge-preset-harness.asd;
+    src = cl.mkLispSource { root = ./harness; };
+  };
+
   # THE case the `executable` argument exists for. Everything the delivery
   # needs -- pname, version, src, meta and the `lispDependencies` entry --
   # comes from the preset's own resolved arguments; the only things spelled
@@ -220,6 +247,62 @@ let
       "x86_64-linux"
     ];
   };
+
+  # An instance carrying BOTH dependency kinds at once, which is what makes
+  # the dev-shell checks below discriminating: `forge-preset-support` has to
+  # be on the shell's registry whether or not checks are enabled, and
+  # `forge-preset-harness` only because they are.
+  shellDeps = preset { lispDependencies = _: [ support ]; };
+
+  # The same package with the test-only entry taken away. Everything else is
+  # identical, so the package derivations must be the SAME store path and the
+  # dev shells must not be -- the pair of facts that separates "check
+  # dependencies reach the shell" from "checks were enabled everywhere".
+  noCheckDeps = preset {
+    lispDependencies = _: [ support ];
+    lispCheckDependencies = _: [ ];
+  };
+
+  generatedShell = shellDeps.devShells.${system}.default;
+
+  # The generated shell as it was built BEFORE the fix: `mkDevShell` over
+  # `ctx.package`, the doCheck-false derivation. Reproduced rather than
+  # described, so the negative control below runs the defect itself instead of
+  # an imitation of it.
+  preFixShell = cl.mkDevShell { drv = shellDeps.packages.${system}.forge-preset; };
+
+  # The working tree a contributor stands in when they run `nix develop`:
+  # exactly the source the preset feeds the package, siblings excluded, so the
+  # `$PWD` entry the shell puts first cannot resolve either of them.
+  shellTree = cl.mkLispSource {
+    root = ./.;
+    exclude = siblingRoots;
+  };
+
+  # A `nix develop` shell, entered for real: its own `shellHook` (the text
+  # `nix develop` sources, INCLUDING the `eval "$setAsdfPathPhase"` that
+  # `mkShell` copies out of `inputsFrom`) and its own PATH (so the Lisp is the
+  # shell's, not one this check supplied). Asserting on `shell.buildInputs`
+  # instead would pass against a shell whose exported registry was empty,
+  # which is precisely the defect this file is about.
+  #
+  # Every run is a subshell that first unsets CL_SOURCE_REGISTRY: the hook
+  # PREPENDS to whatever is already exported, so a second `eval` in the same
+  # shell would silently inherit the first shell's registry and the negative
+  # control would pass for the wrong reason.
+  #
+  # `set +eu` inside it, because that is what an interactive `nix develop`
+  # shell has and the difference is load-bearing twice over: under `set -u`
+  # the unset `$setAsdfPathPhase` would abort the hook, and under `set -e` a
+  # probe reporting a missing system would abort before it could be read.
+  inShell = ''
+    runInDevShell() {
+      ( set +eu
+        unset CL_SOURCE_REGISTRY
+        eval "$1"
+        exec "''${@:2}" )
+    }
+  '';
 
   # `tryEval` stops at weak head normal form, and a flake's outermost attrset
   # is already there. Every guard below is reached by forcing the merged
@@ -768,6 +851,142 @@ in
         };
       }));
     pkgs.runCommand "org-preset-executable-argument-guards" { } "touch $out";
+
+  # D-4. The defect: the preset built `devShells.default` from `ctx.package`,
+  # whose `doCheck` is false, so the resolved CL_SOURCE_REGISTRY omitted
+  # `lispCheckDependencies` and `nix develop` handed a contributor a shell in
+  # which the package's own test system does not load. cl-json-kit and
+  # cl-prolog independently wrote the same `overrideOutputs` workaround.
+  #
+  # Four runs, and none of them is redundant:
+  #   * the probe in the generated shell -- both dependency kinds resolve;
+  #   * run-tests.lisp in the generated shell -- the workflow
+  #     PACKAGE_STANDARD.md documents (`nix develop`, then
+  #     `sbcl --script run-tests.lisp`), passing, with the harness's own
+  #     marker in the runner's output so a suite that merely FOUND the system
+  #     without loading its code would still fail;
+  #   * the probe in the pre-fix shell -- `forge-preset-support` still there
+  #     (so the shell is not simply broken), `forge-preset-harness` gone. That
+  #     is the whole discrimination, in two lines of one file;
+  #   * run-tests.lisp in the pre-fix shell -- red, naming the missing system.
+  #     Without it, "the registry differs" would be proved but "the documented
+  #     workflow was broken" would only be asserted.
+  checks.org-preset-devshell-loads-check-only-dependency =
+    pkgs.runCommand "org-preset-devshell-loads-check-only-dependency"
+      {
+        generatedHook = generatedShell.shellHook;
+        preFixHook = preFixShell.shellHook;
+        nativeBuildInputs = generatedShell.nativeBuildInputs ++ generatedShell.buildInputs;
+        tree = shellTree;
+      }
+      ''
+        ${inShell}
+
+        export HOME="$TMPDIR/home"
+        mkdir -p "$HOME"
+
+        # A writable copy, because ASDF wants somewhere to put fasls and the
+        # store tree is read-only -- and because `$PWD` is the registry's
+        # first entry, so this copy is what "the tree you are standing in"
+        # means for every run below.
+        cp -R "$tree" "$TMPDIR/tree"
+        chmod -R u+w "$TMPDIR/tree"
+        cd "$TMPDIR/tree"
+
+        runInDevShell "$generatedHook" sbcl --script shell-probe.lisp > generated-probe
+        cat generated-probe
+        grep -qx "probe: forge-preset-support=FORGE-PRESET-SUPPORT-REACHED-THE-IMAGE" generated-probe
+        grep -qx "probe: forge-preset-harness=FORGE-PRESET-HARNESS-REACHED-THE-SHELL" generated-probe
+
+        runInDevShell "$generatedHook" sbcl --script run-tests.lisp > generated-suite
+        cat generated-suite
+        grep -qx "harness=FORGE-PRESET-HARNESS-REACHED-THE-SHELL" generated-suite
+        grep -qx "forge-preset suite passed." generated-suite
+
+        # The negative controls, run last so their failure cannot be mistaken
+        # for one of the assertions above.
+        runInDevShell "$preFixHook" sbcl --script shell-probe.lisp > pre-fix-probe
+        cat pre-fix-probe
+        grep -qx "probe: forge-preset-support=FORGE-PRESET-SUPPORT-REACHED-THE-IMAGE" pre-fix-probe
+        if ! grep -q "^probe: forge-preset-harness=MISSING" pre-fix-probe; then
+          echo "cl-nix-forge example: a shell built from the doCheck-false derivation still found the test-only dependency" >&2
+          exit 1
+        fi
+
+        # `set +e` around a bare invocation, never `( set -e; ... ) || status=$?`:
+        # examples/checks-and-coverage carries the full explanation of why the
+        # obvious shape is wrong, and it is not repeated here so the two
+        # cannot drift into disagreeing about it.
+        set +e
+        runInDevShell "$preFixHook" sbcl --script run-tests.lisp > pre-fix-suite 2>&1
+        clNixForgeExpected=$?
+        set -e
+        cat pre-fix-suite
+        if [ "$clNixForgeExpected" -eq 0 ]; then
+          echo "cl-nix-forge example: run-tests.lisp passed in a shell without the test-only dependency" >&2
+          exit 1
+        fi
+        grep -qi "forge-preset-harness" pre-fix-suite
+
+        touch "$out"
+      '';
+
+  # ... and the other half of D-4, which is what keeps the fix from being
+  # "enable checks everywhere": a test-only dependency must reach the SHELL
+  # and stay out of the PACKAGE. Each fact is paired with the one that differs
+  # only in the defect -- an instance whose derivations were check-enabled
+  # would fail the first pair, and one where `lispCheckDependencies` went
+  # nowhere at all would fail the second.
+  checks.org-preset-check-dependency-stays-out-of-the-package =
+    assert lib.assertMsg (
+      shellDeps.packages.${system}.forge-preset.doCheck == false
+    ) "the package derivation is check-enabled";
+    assert lib.assertMsg (
+      shellDeps.packages.${system}.default.drvPath == noCheckDeps.packages.${system}.default.drvPath
+    ) "a lispCheckDependencies entry changed packages.default";
+    assert lib.assertMsg (
+      shellDeps.packages.${system}.forge-preset.drvPath
+      == noCheckDeps.packages.${system}.forge-preset.drvPath
+    ) "a lispCheckDependencies entry changed packages.<pname>";
+    assert lib.assertMsg (
+      generatedShell.drvPath != noCheckDeps.devShells.${system}.default.drvPath
+    ) "control failed: the same lispCheckDependencies entry changed nothing about the dev shell either";
+    assert lib.assertMsg (
+      shellDeps.checks.${system}.default.drvPath != noCheckDeps.checks.${system}.default.drvPath
+    ) "control failed: the same lispCheckDependencies entry changed nothing about checks.default";
+    # And the shell is still a SHELL, not the check: naming `enableCheck` in
+    # `inputsFrom` must not turn `nix develop` into a test run.
+    assert lib.assertMsg (
+      generatedShell.drvPath != shellDeps.checks.${system}.default.drvPath
+    ) "the generated devShell is the generated check";
+    # The registries themselves, which is where the whole difference lives.
+    assert lib.assertMsg (
+      !(lib.hasInfix "forge-preset-harness" shellDeps.packages.${system}.forge-preset.registryPath)
+    ) "the test-only dependency is on the package's own CL_SOURCE_REGISTRY";
+    assert lib.assertMsg (lib.hasInfix "forge-preset-harness" generatedShell.shellHook)
+      "control failed: the test-only dependency is not on the dev shell's registry either";
+    pkgs.runCommand "org-preset-check-dependency-stays-out-of-the-package"
+      {
+        built = shellDeps.packages.${system}.default;
+        harnessPath = harness;
+      }
+      ''
+        # Searched for by STORE PATH, not by name: forge-preset.asd names the
+        # system in its `/test` system's :depends-on, so a grep for the name
+        # would match the source file that is supposed to be there and this
+        # check would fail on a package that is perfectly correct.
+        #
+        # A reference here is a reference an `overlays.default` consumer -- who
+        # asked for the library and not for its test framework -- would pay to
+        # fetch. The registry assertions above are the same fact one level up,
+        # before anything is built.
+        if grep -rqs "$harnessPath" "$built"; then
+          echo "cl-nix-forge example: the built package references the test-only dependency" >&2
+          exit 1
+        fi
+        test -d "$harnessPath"
+        touch "$out"
+      '';
 
   # The generated overlay publishes the package under its own pname, and
   # nothing else -- `packages.docs` must not become `pkgs.docs`.

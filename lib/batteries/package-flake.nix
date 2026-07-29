@@ -196,7 +196,8 @@ in
   #   apps.test          `nix run .#test`, via `mkTestApp`
   #   apps.default       an alias for it -- or the CLI, when `executable != null`
   #   apps.<pname>       the CLI (only when `executable != null`)
-  #   devShells.default  via `mkDevShell`
+  #   devShells.default  via `mkDevShell`, over the CHECK-ENABLED derivation
+  #                      so `lispCheckDependencies` are on the registry
   #   formatter          the same treefmt eval `checks.formatting` uses
   #   overlays.default   via `mkOverlay` (unless `overlayPackages = [ ]`)
   #
@@ -303,7 +304,12 @@ in
   #                  about what "formatted" means.
   #
   #   devShellPackages -- ctx -> [ derivation ] ? [ ]. `mkDevShell`'s
-  #                  `extraPackages`.
+  #                  `extraPackages`: interactive-only tools (a formatter, a
+  #                  linter, an `sbcl.withPackages` carrying libraries to
+  #                  benchmark against). NOT the place for the package's own
+  #                  test dependencies -- the generated shell is built from
+  #                  the check-enabled derivation, so `lispCheckDependencies`
+  #                  are already on its registry.
   #   overlayPackages  -- [ String ] ? [ "default" ]. Which `packages.<system>`
   #                  entries `overlays.default` publishes; `[ ]` omits the
   #                  overlay. Not "all of them": `packages.docs` must not
@@ -608,8 +614,42 @@ in
             }
             // lib.optionalAttrs (executableApp != null) { ${pname} = executableApp; };
 
+            # `package.enableCheck`, NOT `package`. The shell's whole job is
+            # to be the environment a contributor runs the suite in --
+            # PACKAGE_STANDARD.md's documented loop is `nix develop` followed
+            # by `sbcl --script run-tests.lisp`, which is the same runner
+            # `checks.default` and `apps.test` drive. Built from `package`,
+            # whose `doCheck` is false, the resolved registry omits
+            # `lispCheckDependencies` entirely, so a package whose test system
+            # depends on a sibling (cl-json-kit and cl-prolog both depend on
+            # cl-weave for tests and nothing else) gets a shell that cannot
+            # load its own test system. Both migrations wrote the identical
+            # `overrideOutputs` workaround for it, which is what made it this
+            # preset's defect rather than either package's.
+            #
+            # Costs no build that `checks.default` did not already cost.
+            # `mkShell`'s `inputsFrom` takes a derivation's INPUTS, not its
+            # output -- and subtracts the named derivations from the merged
+            # lists precisely so the shell does not depend on them -- so
+            # `enableCheck` is never realised here. What the shell does gain
+            # is the check dependencies themselves, through the string context
+            # of `registryPath`; `mkScriptCheck` builds `checks.default` from
+            # this same `enableCheck`, so those are already built.
+            #
+            # There is deliberately no argument to turn this off. A package
+            # that genuinely wants the leaner shell -- an expensive
+            # test-only dependency a REPL session does not need -- already has
+            # one line that says so exactly, and says it in terms of values
+            # this context already carries:
+            #
+            #   overrideOutputs = ctx: {
+            #     devShells.default = ctx.cl.mkDevShell { drv = ctx.package; };
+            #   };
+            #
+            # `ctx.package` stays the doCheck-false derivation for that
+            # reason, and because it is what `packages.<pname>` publishes.
             devShells.default = cl.mkDevShell {
-              drv = package;
+              drv = package.enableCheck;
               extraPackages = devShellPackages packageContext;
             };
           };

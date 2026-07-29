@@ -294,6 +294,17 @@ dropped into the working tree are precisely the artefacts `mkLispSource` then
 has to keep back out of the store. Left unset, ASDF caches under
 `~/.cache/common-lisp`.
 
+The registry it exports is `drv`'s, so `drv` decides whether
+`lispCheckDependencies` are on it: `lispDerivation` resolves them only when
+`doCheck` is true and drops them entirely when it is not. Pass
+`drv = myApp.enableCheck` — the same derivation with checks on, which is also
+what [`mkScriptCheck`](checks.md#mkscriptcheck) builds a check from — whenever
+the shell is meant to run the suite, or the test system will not load in it.
+That costs no build: `inputsFrom` takes a derivation's *inputs*, not its
+output, so nothing realises `enableCheck` itself; the check dependencies are
+pulled in, and the check that runs the suite builds those anyway.
+`mkPackageFlake`'s generated `devShells.default` does exactly this.
+
 A `pkgs.sbcl.withPackages`-built Lisp in `extraPackages` composes, which was
 not obvious and was checked: `mkShell` puts `packages` ahead of everything
 from `inputsFrom` on `PATH`, so the wrapped Lisp wins over the plain one the
