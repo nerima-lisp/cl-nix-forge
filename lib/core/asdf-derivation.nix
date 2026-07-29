@@ -9,25 +9,108 @@ let
   inherit (native) nativeLibraryEnv;
 
   # Everything cl-nix-forge knows about a Lisp implementation lives in this
-  # ONE table. Adding CCL/ABCL/CLISP/Clasp is a one-row change: nothing
-  # else in this file (or in matrix.nix) branches on implementation name,
-  # and there is no second table that could drift out of agreement with
-  # this one.
+  # ONE table. Adding an implementation is a one-row change: nothing else in
+  # this file (or in matrix.nix, or in script-check.nix, or in
+  # batteries/app.nix) branches on implementation name, and there is no
+  # second table that could drift out of agreement with this one.
+  #
+  # That claim survived first contact. Adding CCL, CLISP, ABCL and Clasp
+  # needed no new conditional anywhere -- but it did need `scriptFlagsOf` to
+  # shell-quote each word instead of joining them raw, because ABCL's row is
+  # the first whose flags contain a space. That was the row VOCABULARY being
+  # too weak, not the abstraction leaking: every consumer still just asks
+  # for "the flags" and appends a file.
   #
   #   scriptFlags :: [ String ] -- the argv words that make the
   #     implementation run, non-interactively, the script file named by the
   #     immediately following argument. A list of words rather than one
   #     command string because the two consumers need it at different
   #     levels: `lispDerivation` splices a whole shell command into a build
-  #     phase, while `lispScript` bakes bare argv words into a makeWrapper
+  #     phase, while `lispScript` bakes argv words into a makeWrapper
   #     `--add-flags`. Expressing the flags once and deriving both (see
   #     `scriptFlagsOf` and `invoke`) is what keeps the row authoritative.
   #     A list, not a single string, because implementations disagree on
-  #     arity here -- SBCL's `--script` is one word, a CCL row would need
-  #     several.
+  #     arity here -- SBCL's `--script` is one word, CCL's row needs four,
+  #     and ABCL's needs an entire Lisp form as a single word.
+  #
+  # THE property every row must have, and the one that is worth measuring
+  # rather than assuming: a script that signals must make the process exit
+  # NON-ZERO. A row that runs the script but always exits 0 is worse than no
+  # row at all, because `asdf:test-system` failures then look like passes.
+  # ABCL's obvious invocation (`--batch --load FILE`) has exactly that bug --
+  # it enters the debugger, hits EOF and exits 0 -- which is why its row
+  # looks nothing like the others.
+  #
+  # Two shapes appear below, because implementations disagree on whether a
+  # script file is an operand of a flag or a bare argument:
+  #   * ends in a flag taking the file (`--script`, `--load`), or ends in
+  #     nothing at all (CLISP takes a bare lispfile operand);
+  #   * ends in `--`, for implementations whose only failure-propagating
+  #     entry point is a `--eval` form; the form reads the file back out of
+  #     the post-`--` argument list. ABCL is the only such row.
+  # Both shapes satisfy the contract above -- "the script file named by the
+  # immediately following argument" -- so no consumer has to know which
+  # shape a row uses.
   lispImplementations = {
+    # `--script` implies --no-sysinit/--no-userinit/--disable-debugger, and
+    # --disable-debugger is what turns an unhandled condition into exit 1.
     sbcl.scriptFlags = [ "--script" ];
+
+    # ECL's `--shell` is its batch script mode; an error during the script
+    # aborts initialization and exits non-zero.
     ecl.scriptFlags = [ "--shell" ];
+
+    # CCL has no `--script`, and rejects a bare filename outright
+    # ("Unrecognized non-option arguments"), so the file is `--load`'s
+    # operand. `--batch` is read by the C kernel (and elided before the Lisp
+    # argument parser sees it); it is what routes an unhandled condition to
+    # `abnormal-application-exit`, i.e. `(quit -1)` -> exit status 255.
+    #
+    # Caveat, deliberately accepted: once the loaded file returns, `--batch`
+    # still reads a listener from stdin and only exits at EOF. Every build
+    # phase gets stdin from /dev/null, so `lispDerivation` and `mkScriptCheck`
+    # exit immediately -- but a `lispScript` wrapper run on a terminal will
+    # sit at a prompt after the script finishes. CCL offers no way to say
+    # "and then quit" without putting a flag AFTER the file, which is not a
+    # shape this table can express.
+    ccl.scriptFlags = [
+      "--batch"
+      "--quiet"
+      "--no-init"
+      "--load"
+    ];
+
+    # CLISP takes the script as a bare operand, which by itself selects
+    # batch mode: an unhandled condition prints and exits 1, no flag needed.
+    # `-q` silences the banner (parity with `--script`) and `-norc` skips
+    # ~/.clisprc so a delivered `lispScript` cannot pick up user state.
+    clisp.scriptFlags = [
+      "-q"
+      "-norc"
+    ];
+
+    # ABCL is the awkward one. `--batch --load FILE` runs the file and exits
+    # 0 even when it signals, and `*debugger-hook*` cannot be pre-set from
+    # `--eval` because ABCL rebinds it around every top-level form. What
+    # does work is catching the condition below the debugger entirely:
+    # `handler-case` around the `load`, with the file taken from the
+    # post-`--` argument list, so the row still ends where a file argument
+    # belongs.
+    abcl.scriptFlags = [
+      "--noinform"
+      "--noinit"
+      "--nosystem"
+      "--batch"
+      "--eval"
+      ''(handler-case (load (first ext:*command-line-argument-list*)) (error (c) (format *error-output* "cl-nix-forge: unhandled ~A: ~A~%" (type-of c) c) (finish-output *error-output*) (ext:quit :status 1)))''
+      "--"
+    ];
+
+    # Clasp's `--script` implies --norc/--noinform/--non-interactive and
+    # disables the debugger; with the debugger disabled an unhandled
+    # condition reaches `non-debugger`, which prints a backtrace and calls
+    # `(core:quit 1)`.
+    clasp.scriptFlags = [ "--script" ];
   };
 
   # Single lookup point, so every entry point reports an unsupported
@@ -38,12 +121,19 @@ let
     lispImplementations.${implementation}
       or (throw "cl-nix-forge ${context}: unsupported lispImplementation \"${implementation}\"; add a row for it to lib/core/asdf-derivation.nix's `lispImplementations` table");
 
-  # The argv words preceding the script path, whitespace-joined: exactly
-  # what makeWrapper's `--add-flags` takes, and also exactly what belongs
-  # on a shell command line before the file argument.
+  # The argv words preceding the script path, each shell-quoted and then
+  # whitespace-joined: exactly what belongs on a shell command line before
+  # the file argument, and also exactly what makeWrapper's `--add-flags`
+  # takes -- `--add-flags` is copied verbatim into a Bash wrapper and
+  # re-parsed by Bash at run time, so the two consumers agree on quoting.
+  #
+  # Quoting each word rather than joining them raw is what lets a row hold a
+  # word containing spaces (ABCL's `--eval` form) without it splitting into
+  # several arguments. Before any row needed that, raw joining happened to
+  # produce the same string, so this is the `[ String ]` contract finally
+  # being honoured rather than a new one.
   scriptFlagsOf =
-    context: implementation:
-    lib.concatStringsSep " " (implementationOf context implementation).scriptFlags;
+    context: implementation: lib.escapeShellArgs (implementationOf context implementation).scriptFlags;
 
   # Non-interactive invocation of a Lisp implementation on a script file,
   # as a shell command for a build phase.

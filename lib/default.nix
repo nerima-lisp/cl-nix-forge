@@ -32,6 +32,9 @@ let
     inherit (asdfDerivation) invoke;
   };
   siblings = import ./batteries/siblings.nix { inherit lib; };
+  # `lib` only: this is the one module that spans systems rather than
+  # living inside one, so it obtains its own `pkgs` per declared system.
+  packageFlake = import ./batteries/package-flake.nix { inherit lib; };
   outputs = import ./batteries/outputs.nix {
     inherit lib pkgs;
     inherit (asdfDerivation) invoke registryPathOf;
@@ -65,6 +68,7 @@ in
   inherit (docs) mkDocsSite;
   inherit (devshell) mkDevShell;
   inherit (siblings) collect;
+  inherit (packageFlake) mkPackageFlake;
   inherit (outputs) mkApp mkTestApp mkOverlay;
   mkExecutable = args: app.mkExecutable (args // { inherit (asdfDerivation) lispDerivation; });
 }

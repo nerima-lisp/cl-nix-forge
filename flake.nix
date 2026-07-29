@@ -34,7 +34,12 @@
           pkgs = pkgsFor system;
         };
 
-      examplesFor =
+      # Each entry contributes `packages`/`checks`/`devShells`. Almost all of
+      # them are examples, which double as this library's test suite; `docs`
+      # is not an example but has the same shape deliberately, so this
+      # repository's own documentation site is built by this repository's own
+      # `mkDocsSite` and is gated by the same duplicate-name guard.
+      contributorsFor =
         system:
         let
           pkgs = pkgsFor system;
@@ -47,6 +52,7 @@
             };
         in
         {
+          docs = call ./docs;
           simple-library = call ./examples/simple-library;
           multi-system-repo = call ./examples/multi-system-repo;
           native-library-consumer = call ./examples/native-library-consumer;
@@ -55,25 +61,25 @@
           check-only-dependencies = call ./examples/check-only-dependencies;
           checks-and-coverage = call ./examples/checks-and-coverage;
           flake-outputs = call ./examples/flake-outputs;
+          org-preset = call ./examples/org-preset;
         };
 
-      # Every example may contribute `packages`/`checks`/`devShells`. Reject
-      # duplicate names rather than allowing a later example to shadow an
-      # earlier one silently.
+      # Reject duplicate names rather than allowing a later contributor to
+      # shadow an earlier one silently.
       mergeAttr =
-        attrName: examples:
+        attrName: contributors:
         nixpkgs.lib.foldl' (
-          acc: exampleName:
+          acc: contributorName:
           let
-            contribution = examples.${exampleName}.${attrName} or { };
+            contribution = contributors.${contributorName}.${attrName} or { };
             duplicateNames = nixpkgs.lib.intersectLists (builtins.attrNames acc) (
               builtins.attrNames contribution
             );
           in
           assert nixpkgs.lib.assertMsg (duplicateNames == [ ])
-            "flake.nix: duplicate ${attrName} entries from example ${exampleName}: ${nixpkgs.lib.concatStringsSep ", " duplicateNames}";
+            "flake.nix: duplicate ${attrName} entries from ${contributorName}: ${nixpkgs.lib.concatStringsSep ", " duplicateNames}";
           acc // contribution
-        ) { } (builtins.attrNames examples);
+        ) { } (builtins.attrNames contributors);
 
       treefmtEval = forAllSystems (system: treefmt-nix.lib.evalModule (pkgsFor system) ./treefmt.nix);
 
@@ -89,15 +95,15 @@
     {
       lib = forAllSystems clFor;
 
-      packages = forAllSystems (system: mergeAttr "packages" (examplesFor system));
+      packages = forAllSystems (system: mergeAttr "packages" (contributorsFor system));
 
-      devShells = forAllSystems (system: mergeAttr "devShells" (examplesFor system));
+      devShells = forAllSystems (system: mergeAttr "devShells" (contributorsFor system));
 
       formatter = forAllSystems (system: treefmtEval.${system}.config.build.wrapper);
 
       checks = forAllSystems (
         system:
-        (mergeAttr "checks" (examplesFor system))
+        (mergeAttr "checks" (contributorsFor system))
         // {
           formatting = treefmtEval.${system}.config.build.check self;
           version-extractor-contract = versionExtractorContract system;

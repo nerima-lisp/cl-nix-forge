@@ -1,0 +1,122 @@
+# cl-nix-forge documentation -- MkDocs + Material configuration.
+#
+# Build:   mkdocs build -f docs/mkdocs.yml --strict
+# Serve:   mkdocs serve  -f docs/mkdocs.yml
+#
+# The flake builds this same config offline through the library's own
+# `mkDocsSite` (lib/batteries/docs.nix): `nix build .#docs`, also published as
+# `checks.docs`. A Nix docs library that built its own docs with a hand-rolled
+# derivation would be evidence against its own helper.
+
+site_name: cl-nix-forge
+site_description: >-
+  crane for Common Lisp/ASDF -- a Nix flake-library for building, testing, and
+  composing ASDF systems as Nix derivations.
+site_url: https://nerima-lisp.github.io/cl-nix-forge/
+
+repo_url: https://github.com/nerima-lisp/cl-nix-forge
+repo_name: nerima-lisp/cl-nix-forge
+edit_uri: edit/main/docs/src/
+
+docs_dir: src
+# Only used by a bare `mkdocs build`; the flake passes `--site-dir "$out"`.
+site_dir: ../site
+
+# `mkDocsSite` passes --strict as well. Declaring it here too means
+# `mkdocs serve` applies the same gate, so there is no invocation path that
+# silently tolerates a broken link. Use `mkdocs serve --no-strict` while
+# drafting.
+strict: true
+
+# `--strict` promotes WARNINGs to failures, and only WARNINGs. Three of the
+# checks this file depends on are INFO by default, which means `--strict`
+# alone does NOT fail on them -- verified by building this site with a page
+# left out of `nav` and watching it pass. Raising them here is what makes
+# "every page appears in nav" and "no dead link or anchor" enforceable rather
+# than aspirational.
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+
+copyright: Copyright &copy; takeokunn -- MIT License
+
+theme:
+  name: material
+  language: en
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+extra:
+  generator: false
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+
+# Every page under docs/src/ must appear here: --strict fails the build on an
+# unlisted page. That is deliberate, so the nav cannot silently fall behind.
+#
+# The Reference section is split by what a reader is trying to do, not by
+# lib/core vs lib/batteries -- that distinction is recorded per function in
+# reference/api.md instead, where it is one column rather than a partition
+# that scatters related functions across two pages.
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Guide:
+      - Why cl-nix-forge: guide/why.md
+      - Non-goals: guide/non-goals.md
+      - Examples: guide/examples.md
+  - Reference:
+      - API index: reference/api.md
+      - Building systems: reference/building.md
+      - Dependencies and native libraries: reference/dependencies.md
+      - Checks and coverage: reference/checks.md
+      - Flake outputs and delivery: reference/outputs.md
+      - Versions: reference/versions.md
+      - Internals: reference/internals.md
+  - Project:
+      - Platform coverage: project/platform-coverage.md
+
+not_in_nav: |
+  notes/

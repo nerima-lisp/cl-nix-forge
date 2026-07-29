@@ -65,10 +65,15 @@ let
 
   # Stands in for a Lisp implementation `lib/core/asdf-derivation.nix`'s
   # `lispImplementations` table has no row for. A stub rather than a real
-  # nixpkgs package (`pkgs.ccl`), so the negative test below stays valid on
-  # hosts where that package does not exist -- nothing is ever built from
-  # it, both entry points reject it during evaluation.
-  unsupportedLisp = pkgs.runCommand "ccl-1.13" { } "mkdir -p $out/bin";
+  # nixpkgs package, so the negative test below stays valid on hosts where
+  # that package does not exist -- nothing is ever built from it, both entry
+  # points reject it during evaluation.
+  #
+  # The name is deliberately one no implementation will ever have. It used
+  # to be `ccl-1.13`, which quietly stopped testing anything the moment CCL
+  # got a row: adding a row is a routine, expected change, and this check
+  # must survive every one of them.
+  unsupportedLisp = pkgs.runCommand "no-such-lisp-0.0" { } "mkdir -p $out/bin";
 
   unsupportedLispDerivation = cl.lispDerivation {
     lispSystem = "greeter";
@@ -128,7 +133,7 @@ in
   # what `lispImplementation` defaults to proves the rejection came from the
   # missing table row and not from a malformed subject.
   checks.unsupported-lisp-implementation-rejected =
-    assert lib.getName unsupportedLisp == "ccl";
+    assert lib.getName unsupportedLisp == "no-such-lisp";
     assert !(builtins.tryEval unsupportedLispDerivation).success;
     assert !(builtins.tryEval unsupportedLispScript).success;
     pkgs.runCommand "unsupported-lisp-implementation-rejected" { } "touch $out";

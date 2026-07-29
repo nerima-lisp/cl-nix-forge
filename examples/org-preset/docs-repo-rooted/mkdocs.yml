@@ -1,0 +1,14 @@
+site_name: forge-preset (repo-rooted)
+docs_dir: src
+theme:
+  name: material
+markdown_extensions:
+  # check_paths is what makes this fixture a real test. Left at its default
+  # of false, a snippet whose target is missing from the source expands to
+  # nothing and the --strict build still succeeds -- so the check below would
+  # pass whether or not the fileset actually reached outside docs/.
+  - pymdownx.snippets:
+      check_paths: true
+nav:
+  - Home: index.md
+  - Changelog: changelog.md
