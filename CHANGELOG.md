@@ -14,6 +14,47 @@ three migrations, not the one that precedes them.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-30
+
+Everything here was found by APPLYING the library to a real repository for
+the first time, not by reading it. This is the release that justifies the
+note at the top of this file about `1.0.0`.
+
+### Added
+
+- `mkPackageFlake` gains `executable`, which builds a delivered CLI from the
+  preset's OWN resolved `lispDerivation` arguments. `mkExecutable`'s `args`
+  was documented as "the exact attrset you'd pass to lispDerivation", but the
+  preset had already computed that attrset and exposed only the result — so a
+  delivered binary re-spelled `pname`, `lispSystem`, `meta`, `version` and
+  `src` in an escape hatch. Two sources of truth for the package's identity,
+  inside the one function whose purpose is removing exactly that. The first
+  package to deliver a CLI *and* carry `lispDependencies` would have shipped a
+  binary silently missing them. The resolved attrset is also on the context
+  for anything the argument does not cover; re-spelling `args` wholesale is
+  rejected by name.
+- `mkExecutable` gains `installSource`, plus a written contract for what
+  `$out` contains and what a delivered image may assume about its
+  surroundings. A Lisp image that resolves its ASDF source root from
+  `*runtime-pathname*` found nothing, because this function published
+  `$out/bin` and nothing else; the binary died on its first re-load of one of
+  its own systems. Both sides were individually correct and disagreed
+  silently, so the missing contract was the actual defect. The dependency
+  closure is installed alongside the system's own tree — sources that are
+  findable while their dependencies' are not fail at the same place, one
+  `asdf:load-system` later.
+
+### Changed
+
+- **Breaking:** `mkPackageFlake`'s `root` is required. `root ? self` was the
+  obvious default and never worked: a flake's `self` is an attrset carrying
+  an `outPath`, and `lib.fileset` rejects it, so the failure surfaced from
+  inside `mkLispSource` naming neither `self` nor the argument responsible.
+  It survived the suite because examples are handed `pkgs` and `cl` directly
+  and their `self` was already a path literal — the test suite could not
+  reach the bug because it never exercises a real flake `self`.
+- Delivered executables carry their version in the store path again.
+
 ## [0.2.0] - 2026-07-30
 
 ### Added
@@ -132,6 +173,7 @@ library does rather than what changed, since there is no prior version.
 - Only `sbcl` and `ecl` have rows in the implementation table.
 - The library has no consumers yet. See the note above about `1.0.0`.
 
-[Unreleased]: https://github.com/nerima-lisp/cl-nix-forge/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/nerima-lisp/cl-nix-forge/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/nerima-lisp/cl-nix-forge/releases/tag/v0.3.0
 [0.2.0]: https://github.com/nerima-lisp/cl-nix-forge/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nerima-lisp/cl-nix-forge/releases/tag/v0.1.0
