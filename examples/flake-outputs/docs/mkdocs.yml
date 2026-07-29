@@ -1,0 +1,6 @@
+site_name: forge-demo
+docs_dir: src
+theme:
+  name: material
+nav:
+  - Home: index.md

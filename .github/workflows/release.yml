@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # Create the GitHub Release.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: ${{ vars.CACHIX_CACHE }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # Never publish a release that does not pass its own test suite. This
+      # builds every check, not just evaluates them: a missing module argument
+      # is a lazy error that passes `--no-build` and only fails at build time,
+      # which is exactly how six checks were once green in evaluation and red
+      # in CI.
+      - name: Verify the tagged tree
+        run: nix flake check --print-build-logs
+
+      # The org standard's gate is "git tag == the .asd :version". This
+      # repository is a Nix library and ships no .asd, so CHANGELOG.md is its
+      # single source of truth for the version instead: a tag with no matching
+      # Keep a Changelog section is refused here, at the only point where it
+      # can still be corrected cheaply. The extraction doubles as the release
+      # body, so the gate cannot pass while the notes are empty.
+      - name: Extract release notes and verify the tag is documented
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [[ ! -s release-notes.md ]]; then
+            echo "::error::CHANGELOG.md has no section for [$version]; the tag and the changelog disagree" >&2
+            exit 1
+          fi
+
+      - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          body_path: release-notes.md

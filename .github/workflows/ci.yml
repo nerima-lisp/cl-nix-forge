@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A pull request that is force-pushed repeatedly would otherwise queue one full
+# two-OS matrix per push, each rebuilding every SBCL derivation from scratch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flake-check:
+    strategy:
+      # Never cancel the macOS leg because the Linux leg failed (or vice
+      # versa): the two hosts exercise genuinely different code paths -- most
+      # notably batteries/app.nix's Darwin-only `program-op` workaround -- so
+      # one host's failure must not hide the other's result.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    # Required by the nerima-lisp package standard: a job with no ceiling turns
+    # a runaway Lisp compile into a six-hour billed hang instead of a failure.
+    timeout-minutes: 30
+    steps:
+      # Every `uses:` in this org pins a 40-character commit SHA, never a
+      # mutable tag: a tag can be repointed at new code without the workflow
+      # changing, which is a supply-chain hole no review would catch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # Every check in this repository compiles Lisp with SBCL or ECL, so an
+      # uncached run rebuilds the whole example suite on both hosts for every
+      # push. The cache and its token are provisioned declaratively (see
+      # takeokunn/private-terraform, projects/github/repos_nerima_lisp.tf),
+      # which is why the cache name is a repository variable rather than a
+      # literal here.
+      #
+      # A pull request from a fork cannot read repository secrets, so authToken
+      # is empty there. That is intentional and must stay non-fatal: such a run
+      # should still read from the cache and simply not push to it, rather than
+      # failing on a missing credential.
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: ${{ vars.CACHIX_CACHE }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ github.event.pull_request.head.repo.fork == true }}
+
+      - name: Evaluate checks for every declared system
+        run: nix flake check --all-systems --no-build --no-write-lock-file
+
+      - name: Build every check for the host system
+        shell: bash
+        run: |
+          set -euo pipefail
+          system="$(nix eval --impure --raw --expr builtins.currentSystem)"
+          checks="$(nix eval --impure --raw --expr 'let flake = builtins.getFlake (toString ./.); in builtins.concatStringsSep "\n" (builtins.attrNames flake.checks.${builtins.currentSystem})')"
+          test -n "$checks" || {
+            echo "No checks defined for $system" >&2
+            exit 1
+          }
+          while IFS= read -r check; do
+            nix build --print-build-logs ".#checks.${system}.${check}"
+          done <<< "$checks"

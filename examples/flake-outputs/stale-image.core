@@ -1,0 +1,6 @@
+Planted fixture, not a real SBCL core.
+
+The leftover of an interrupted `save-lisp-and-die`. Same story as
+stale-build-artifact.fasl, and the reason cl-prolog's hand-written filter had to
+name .core, .cfasl, .dfsl and .ufasl one at a time -- a list that is only ever
+as complete as the implementations someone happened to think of.

@@ -1,0 +1,8 @@
+Planted fixture, not a real FASL.
+
+A working tree that has had `sbcl --script run-tests.lisp` run in it collects
+files exactly like this one. `lib.cleanSourceFilter` keeps them (it only drops
+.o and .so), so a denylist-based source filter lets them into the store and the
+derivation hash changes after every local test run. mkLispSource's allowlist
+never names this file, so it never reaches the store -- asserted by the
+forge-demo-source-filter check.

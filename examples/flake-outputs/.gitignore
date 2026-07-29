@@ -1,0 +1,12 @@
+# The build artefacts in this directory are FIXTURES, not artefacts: the
+# forge-demo-source-filter check exists to prove mkLispSource keeps them out
+# of the store, and it can only prove that if they are actually there.
+#
+# They have to be re-included explicitly because ignoring *.fasl in a global
+# ~/.config/git/ignore is a near-universal habit, and inside a flake the source
+# tree is the *tracked* tree -- an ignored fixture would silently disappear and
+# turn `test ! -e "$plain/stale-build-artifact.fasl"` into an assertion that
+# passes because the file never existed. A nested .gitignore takes precedence
+# over the global one, so this negation is what keeps the check honest.
+!*.fasl
+!*.core
