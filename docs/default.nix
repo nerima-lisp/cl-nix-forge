@@ -11,31 +11,25 @@
   ...
 }:
 let
-  # cl-nix-forge has no `.asd`, so `fromAsdSystem` has nothing to read here
-  # and CHANGELOG.md is the repository's only version of record. Same
-  # technique the org standard prescribes for `.asd` files: split into lines
-  # first, because Nix's regexes are anchored to the whole string and `.`
-  # does not cross a newline. The first `## [x.y.z] - date` heading is the
-  # most recent release; `## [Unreleased]` does not match the digit-dot
-  # shape and is skipped.
+  # The single source of truth for this repository's version.
   #
-  # A CHANGELOG whose heading format drifts fails the docs build loudly
-  # rather than publishing a site labelled with the wrong version.
+  # cl-nix-forge has no `.asd`, so `fromAsdSystem` has nothing to read. Until
+  # the 2026-08-01 revision the version of record was the first
+  # `## [x.y.z] - date` heading in CHANGELOG.md; that revision abolished
+  # CHANGELOG.md org-wide, which briefly left this repository with no version
+  # source at all.
   #
-  # The brackets are spelled `[[]`/`[]]` rather than `\[`/`\]`: Nix compiles
-  # POSIX extended regexes, which reject a backslash-escaped bracket outright
-  # ("invalid regular expression"), while a bracket expression containing the
-  # literal is portable.
-  releaseHeadingPattern = "## [[]([0-9]+[.][0-9]+[.][0-9]+)[]].*";
-  changelogLines = lib.splitString "\n" (builtins.readFile ../CHANGELOG.md);
-  releaseHeadings = builtins.filter (
-    line: builtins.match releaseHeadingPattern line != null
-  ) changelogLines;
-  version =
-    if releaseHeadings == [ ] then
-      throw "cl-nix-forge docs: no `## [x.y.z] - date` heading found in CHANGELOG.md"
-    else
-      builtins.head (builtins.match releaseHeadingPattern (builtins.head releaseHeadings));
+  # A plain VERSION file replaces it. The objection to one -- that a tracked
+  # file has to be kept in step with the tag by hand -- applies just as much to
+  # a `.asd` `:version`, which is what every other repository here uses. What
+  # makes that arrangement safe is not the file format but the gate:
+  # release.yml refuses to publish a tag that disagrees with the file. The same
+  # gate is wired to this file, so the two cannot drift silently.
+  #
+  # Not flake.nix: a `version = "0.4.0"` attribute there trips the conformance
+  # rule "version is not hardcoded in flake.nix". Not the git tag: it is
+  # unavailable under pure evaluation.
+  version = lib.removeSuffix "\n" (builtins.readFile ../VERSION);
 
   site = cl.mkDocsSite {
     root = ./.;

@@ -1,9 +1,13 @@
-name: ci
+name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 # A pull request that is force-pushed repeatedly would otherwise queue one full
 # run per push, each rebuilding every SBCL derivation from scratch.
@@ -12,16 +16,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  flake-check:
-    # x86_64-linux only. `flake.nix` still declares aarch64-darwin, and the
-    # evaluation step below covers it, but nothing here BUILDS it.
+  # One job on purpose. Granularity belongs in the flake's `checks.*`
+  # attributes, which this workflow builds individually below.
+  check:
+    # x86_64-linux only, and as of the 2026-08-01 revision that is also the
+    # only platform `flake.nix` declares, so evaluation and build now cover
+    # the same set.
     #
-    # The consequence is worth stating plainly, because it is not symmetric:
-    # `batteries/app.nix` branches on `isDarwin && sbcl`, so a Linux runner
-    # only ever executes the `asdf:program-op` delivery path. The Darwin
-    # `save-lisp-and-die` fallback -- the branch that exists precisely because
-    # `program-op` was observed to produce no binary on aarch64-darwin -- is
-    # therefore verified by local `nix flake check` alone, never by CI.
+    # The consequence of dropping aarch64-darwin is worth stating plainly,
+    # because it is not symmetric: `batteries/app.nix` branches on
+    # `isDarwin && sbcl`, so a Linux runner only ever executes the
+    # `asdf:program-op` delivery path. The Darwin `save-lisp-and-die`
+    # fallback -- the branch that exists precisely because `program-op` was
+    # observed to produce no binary on aarch64-darwin -- is now verified by
+    # nothing at all. It is kept because a consumer may still declare
+    # `aarch64-darwin` in their OWN `systems` list; this library does not
+    # constrain that.
     runs-on: ubuntu-latest
     # Required by the nerima-lisp package standard: a job with no ceiling turns
     # a runaway Lisp compile into a six-hour billed hang instead of a failure.
@@ -32,35 +42,28 @@ jobs:
       # changing, which is a supply-chain hole no review would catch.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
+      # The org's shared installer + Cachix wiring, so the nix-installer and
+      # cachix-action SHAs are pinned in exactly one place per repository.
+      #
       # Every check in this repository compiles Lisp with SBCL or ECL, so an
       # uncached run rebuilds the whole example suite on every push. The cache
       # name and token are provisioned declaratively (see
       # takeokunn/private-terraform: the cache itself in projects/cachix, the
       # repository variable and secret in projects/github), which is why the
-      # name is a variable rather than a literal here.
-      #
-      # `continue-on-error` because a cache is an OPTIMISATION and must never
-      # be able to fail a correctness gate. Two normal situations make this
-      # step fail: a pull request from a fork cannot read repository secrets,
-      # and the cache may not have been created yet (it is declared in
-      # `projects/cachix/caches.tf` but that workspace is applied separately
-      # from the GitHub one -- this exact mismatch turned the first CI run of
-      # this repository red while every check was in fact passing). Both should
-      # degrade to "build everything, cache nothing", not to a red build.
-      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
-        continue-on-error: true
+      # name is a variable rather than a literal here. The action degrades to
+      # "build everything, cache nothing" when the cache or token is absent --
+      # a fork pull request, or a cache not yet applied -- rather than failing
+      # a correctness gate on an optimisation.
+      - uses: ./.github/actions/nix-setup
         with:
-          name: ${{ vars.CACHIX_CACHE }}
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: ${{ github.event.pull_request.head.repo.fork == true }}
+          cachix-cache: ${{ vars.CACHIX_CACHE }}
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
+      # No `--all-systems`: `flake.nix` declares exactly one system, so the
+      # flag would not widen the evaluation. PACKAGE_STANDARD.md forbids it
+      # for that reason.
       - name: Evaluate checks for every declared system
-        run: nix flake check --all-systems --no-build --no-write-lock-file
+        run: nix flake check --no-build --no-write-lock-file
 
       - name: Build every check for the host system
         shell: bash

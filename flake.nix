@@ -17,12 +17,16 @@
       ...
     }:
     let
-      # Only platforms actually exercised: x86_64-linux by CI, aarch64-darwin
-      # by local development. Not advertising a platform nothing verifies.
-      systems = [
-        "x86_64-linux"
-        "aarch64-darwin"
-      ];
+      # Only platforms actually exercised, and CI exercises exactly one:
+      # x86_64-linux. aarch64-darwin was dropped in the 2026-08-01 revision of
+      # PACKAGE_STANDARD.md -- it was verified only by local development, which
+      # nothing enforces, so it advertised a platform nothing gated.
+      #
+      # This list is this repository's own, for its examples and docs outputs.
+      # It is NOT the list an adopter passes to `mkPackageFlake`: that one
+      # belongs to the adopter's flake, and `mkPackageFlake` iterates whatever
+      # it is given.
+      systems = [ "x86_64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
       pkgsFor = system: import nixpkgs { inherit system; };
