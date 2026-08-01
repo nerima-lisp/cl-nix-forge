@@ -107,10 +107,57 @@
 
       checks = forAllSystems (
         system:
-        (mergeAttr "checks" (contributorsFor system))
+        let
+          pkgs = pkgsFor system;
+          contributors = contributorsFor system;
+
+          # This repository's own test suite. `contributorsFor` says the
+          # examples double as it: `examples/*/default.nix` drive `mkPackage`,
+          # `mkTestCheck`, `mkCoverageReport`, `mkPackageFlake` and the org
+          # preset against real ASDF trees, several of them by asserting that a
+          # deliberately broken input *fails*. `version-extractor-contract`
+          # covers the one piece of pure evaluation no example can reach, since
+          # `fromAsdSystem` parses a string and never builds anything.
+          suite = (mergeAttr "checks" contributors) // {
+            version-extractor-contract = versionExtractorContract system;
+          };
+        in
+        suite
         // {
           formatting = treefmtEval.${system}.config.build.check self;
-          version-extractor-contract = versionExtractorContract system;
+
+          # `mkPackageFlake` hands its adopters `checks.default = <the
+          # package's test suite>`. This repository is the library that
+          # generates that attribute and had none of its own, because its
+          # `checks` are assembled by merging contributors rather than by a
+          # single generator call. Being the library is not an exemption from
+          # being gated by it.
+          #
+          # `default` depends on every member of `suite`, so it is the same
+          # statement `mkPackageFlake` makes for an adopter: "this package's
+          # tests pass". `nix build .#checks.<system>.default` fails if any one
+          # of them fails.
+          #
+          # `formatting` is deliberately not a member. treefmt over the whole
+          # tree is not a statement about whether the library works, which is
+          # why `mkPackageFlake` also keeps it as a sibling of `default` rather
+          # than a component.
+          default = pkgs.runCommand "cl-nix-forge-suite" { } ''
+            # Each member is named in the build script so that it enters this
+            # derivation's input closure and is built before this command runs.
+            # Recording the paths rather than discarding them keeps the output
+            # a readable manifest of what was actually gated.
+            ${nixpkgs.lib.concatMapStringsSep "\n" (
+              name: "printf '%s %s\\n' ${nixpkgs.lib.escapeShellArg name} ${suite.${name}} >> $out"
+            ) (builtins.attrNames suite)}
+          '';
+
+          # Restated here rather than left to `mergeAttr`. docs/default.nix
+          # already contributes this exact derivation, but only at evaluation
+          # time, so nothing reading flake.nix -- a reviewer or
+          # check-conformance.sh -- could see that the `mkdocs build --strict`
+          # gate was wired at all. Same derivation, no second build.
+          docs = contributors.docs.checks.docs;
         }
       );
     };
