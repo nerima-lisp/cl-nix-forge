@@ -5,7 +5,7 @@
 ```nix
 {
   inputs.cl-nix-forge = {
-    url = "github:nerima-lisp/cl-nix-forge/v0.1.0";
+    url = "github:nerima-lisp/cl-nix-forge/v0.4.1";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 }
@@ -135,3 +135,9 @@ looking for `share/common-lisp/source/` next to itself will find them; see
 the outputs a downstream repository writes once and then stops thinking
 about. [`examples/flake-outputs/`](guide/examples.md) is a worked version of
 exactly that surface.
+
+If the repository is a nerima-lisp package, do not assemble those by hand:
+[`mkPackageFlake`](reference/outputs.md#mkpackageflake) generates all of them
+— plus the formatter, the docs check and the test app — from the `.asd` and a
+source root, and every page above then describes an argument rather than a
+call you write.

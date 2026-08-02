@@ -51,7 +51,7 @@ As a flake input, pinned to a release tag:
 
 ```nix
 inputs.cl-nix-forge = {
-  url = "github:nerima-lisp/cl-nix-forge/v0.1.0";
+  url = "github:nerima-lisp/cl-nix-forge/v0.4.1";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
@@ -59,8 +59,13 @@ inputs.cl-nix-forge = {
 A bare `github:nerima-lisp/cl-nix-forge` follows this repository's default
 branch, so a push here would change your build without warning.
 
-The library is `cl-nix-forge.lib.${system}`, a flat attrset of 28 functions.
+The library is `cl-nix-forge.lib.${system}`, a flat attrset of 29 functions.
 There is nothing to install into a Lisp image and no runtime component.
+
+A whole nerima-lisp package's flake is one call —
+[`mkPackageFlake`](docs/src/reference/outputs.md#mkpackageflake) generates the
+packages, checks, apps, devShell, formatter and overlay the org standard
+requires, from the `.asd` and a source root.
 
 ## Why not nixpkgs' `sbcl.buildASDFSystem`, or `cl-nix-lite`?
 
@@ -97,25 +102,29 @@ The documentation source lives in [docs/src/](docs/src/) and builds with
 - [Getting started](docs/src/getting-started.md)
 - [Why cl-nix-forge](docs/src/guide/why.md) — the comparison table
 - [Non-goals](docs/src/guide/non-goals.md)
-- [Examples](docs/src/guide/examples.md) — the eight worked examples in
+- [Examples](docs/src/guide/examples.md) — the nine worked examples in
   `examples/`, which double as this library's own test suite
-- [API reference](docs/src/reference/api.md) — all 28 exported functions
+- [API reference](docs/src/reference/api.md) — all 29 exported functions
 - [Platform coverage](docs/src/project/platform-coverage.md) — what CI
   verifies and what it does not
+- [Release process](docs/src/project/release-process.md) — where the version
+  lives and what gates a tag
 
 ## Development
 
 ```sh
-nix flake check          # build and verify this host's checks
-nix fmt                  # treefmt/nixfmt, gated by checks.formatting
-nix build .#docs         # the documentation site
+nix flake check                          # build and verify this host's checks
+nix build .#checks.x86_64-linux.default  # the whole suite as one derivation
+nix fmt                                  # treefmt/nixfmt, gated by checks.formatting
+nix build .#docs                         # the documentation site
 ```
 
-`nix flake check --all-systems --no-build --no-write-lock-file` evaluates
-every declared system without attempting cross-platform builds. CI runs both,
-but builds only on `x86_64-linux`; see
-[Platform coverage](docs/src/project/platform-coverage.md) for the gap that
-leaves.
+`nix flake check --no-build --no-write-lock-file` evaluates the checks without
+building them, which is what catches an evaluation-time assertion. There is no
+`--all-systems`: the flake declares exactly one system, `x86_64-linux`, so the
+flag would widen nothing. That is also the only platform any gate builds; see
+[Platform coverage](docs/src/project/platform-coverage.md) for what that
+leaves unverified.
 
 `examples/` is the test suite. A change to `lib/` that no example exercises
 is a change nothing verifies.

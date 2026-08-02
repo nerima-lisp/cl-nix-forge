@@ -85,6 +85,35 @@ and once against one that fails; and the delivered binary prints its own
 argv, dynamic space size and loaded modules so the checks can assert on all
 three.
 
+### `org-preset/`
+
+[`mkPackageFlake`](../reference/outputs.md#mkpackageflake) — the org standard
+as one call — driven against a real ASDF tree from twenty checks, which is
+the largest example here because the preset is the largest function.
+
+It builds several instances of the preset from one shared argument set and
+asserts what distinguishes them: the generated `checks.default` really is the
+package's own `run-tests.lisp` (the check *is* the generated derivation,
+built verbatim), and a copy pointed at a deliberately failing runner is
+proved to fail. A `formatter` and a `checks.formatting` are proved to come
+from the same treefmt evaluation, by a stub module that plants a marker both
+must carry. An instance declaring no `docs` and no `treefmt` is asserted to
+have *no* `packages.docs`, `checks.docs` or `checks.formatting` — absence
+asserted as absence, each paired with a positive control on the instance that
+does declare them, since an assertion whose subject is misspelled passes
+exactly like one that holds.
+
+The escape hatches are exercised in both directions: an `extraOutputs` name
+that collides with a generated one and an `overrideOutputs` name that was
+never generated are each proved to be evaluation errors, while a legitimate
+override *wraps* `ctx.generated.checks.default` rather than rebuilding it. On
+the delivery side, an `executable` is proved to inherit the package's
+`lispDependencies` without repeating them, to round-trip `packageArgs`, and
+to reject `args`/`lispDerivation`. The devShell check is the one that
+motivated a fix: it loads a test-only dependency in the generated shell, and
+the same assertion is run against a shell built the pre-fix way to prove it
+would have failed.
+
 ## Running them
 
 ```sh
@@ -94,12 +123,20 @@ nix flake check
 builds and verifies the current host's checks.
 
 ```sh
-nix flake check --all-systems --no-build --no-write-lock-file
+nix flake check --no-build --no-write-lock-file
 ```
 
-evaluates every declared system without attempting cross-platform builds,
-which is what catches an evaluation-time assertion that only fires on a
-platform you are not standing on.
+evaluates them without building, which is what catches an evaluation-time
+assertion — several examples assert that a broken input *fails*, and those
+fire during evaluation. There is no `--all-systems`: `flake.nix` declares
+exactly one system, so the flag would widen nothing.
 
-CI runs both, but builds on `x86_64-linux` only. What that leaves unverified
-is stated in [Platform coverage](../project/platform-coverage.md).
+```sh
+nix build .#checks.x86_64-linux.default
+```
+
+builds the whole suite through the aggregate every member is an input of.
+
+CI runs the evaluation and then builds each check individually. What that
+leaves unverified is stated in
+[Platform coverage](../project/platform-coverage.md).

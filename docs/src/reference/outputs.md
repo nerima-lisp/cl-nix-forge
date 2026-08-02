@@ -4,6 +4,13 @@ These are the functions a downstream flake calls once, near the top level,
 and then stops thinking about. `examples/flake-outputs/` is a worked version
 of the whole surface.
 
+A nerima-lisp package normally does not call them one at a time:
+[`mkPackageFlake`](#mkpackageflake), at the end of this page, is the org
+standard as a single function call and generates all of them together.
+Read the individual entries first — the preset's arguments are named after
+them, and every escape hatch it offers hands you back the function it was
+about to call.
+
 ## `mkExecutable`
 
 Deliver a standalone binary via `asdf:program-op`.
@@ -341,10 +348,12 @@ packages.${system}.docs = cl.mkDocsSite {
 
 It deliberately does not guess at any one project's fileset shape. Pass
 `fileset`, built with `lib.fileset.unions` like any other Nix project, when
-the docs read something outside `root` — a repo-root `CHANGELOG.md` that a
-changelog page snippet-includes, for instance — and plain `root` for the
-common single-directory case. That one optional argument is what collapses
-two docs conventions that grew independently into one function.
+the `mkdocs.yml` is not itself the root of what the build must see — a repo
+whose config sits at `docs/mkdocs.yml` but whose pages include a file from
+the repository root passes `root = ./.`, a `fileset` naming both, and
+`mkdocsYmlName = "docs/mkdocs.yml"` — and plain `root` for the common
+single-directory case. That one optional argument is what collapses two docs
+conventions that grew independently into one function.
 
 Identity is the caller's, not this function's. The site is a package a
 project publishes under its own name and version — it appears in
@@ -378,3 +387,161 @@ all. This is only a naming-convention shorthand for "pull the default package
 out of each of these flake inputs by name", so a downstream flake does not
 reinvent yet another way to spell that. `names` must be attribute names
 shared by both `flakeInputs` and each input's own `packages.<system>`.
+
+## `mkPackageFlake`
+
+Every output a nerima-lisp package's `flake.nix` declares, as one call.
+
+```nix
+outputs =
+  { self, nixpkgs, treefmt-nix, cl-nix-forge, ... }:
+  cl-nix-forge.lib.x86_64-linux.mkPackageFlake {
+    inherit self nixpkgs;
+    pname = "my-app";
+    asd = ./my-app.asd;
+    root = ./.;
+    systems = [ "x86_64-linux" ];
+    meta = { description = "..."; };
+
+    docs = { root = ./docs; };
+    treefmt = { evalModule = treefmt-nix.lib.evalModule; };
+    executable = { dynamicSpaceSize = 4096; };
+  };
+```
+
+The org standard is distributed as a *template* — one `flake.nix` copied by
+hand into every repository. The copies then drift: at the time this function
+was written, three of them spelled the same `.asd` version extraction three
+ways, and one of the three regexes had already diverged. This is that
+template as a function call, so the copies converge by construction.
+
+### What it generates
+
+Exactly the org standard's required-output table, per declared system, and
+nothing else:
+
+| Output | Built by | Present when |
+|---|---|---|
+| `packages.<pname>` | [`lispDerivation`](building.md#lispderivation) | always |
+| `packages.default` | alias for `<pname>` — or the CLI | always |
+| `packages.docs` | [`mkDocsSite`](#mkdocssite) | `docs != null` |
+| `checks.default` | [`mkScriptCheck`](checks.md#mkscriptcheck) over `runner` | always |
+| `checks.docs` | asserts the `--strict` site emitted an `index.html` | `docs != null` |
+| `checks.formatting` | the treefmt gate | `treefmt != null` |
+| `apps.test` | [`mkTestApp`](#mktestapp) | always |
+| `apps.default` | alias for `test` — or the CLI | always |
+| `apps.<pname>` | [`mkApp`](#mkapp) over the CLI | `executable != null` |
+| `devShells.default` | [`mkDevShell`](#mkdevshell) | always |
+| `formatter` | the same treefmt eval `checks.formatting` uses | `treefmt != null` |
+| `overlays.default` | [`mkOverlay`](#mkoverlay) | `overlayPackages != [ ]` |
+
+Two of those rows are decisions rather than plumbing:
+
+`packages.<pname>` is the ASDF **system** even when a CLI is delivered,
+because that is the entry a downstream `lispDependencies` needs;
+`packages.default` is what `nix build .` produces and what the overlay
+publishes, which for a package that ships a binary is the binary.
+
+`devShells.default` is built from the **check-enabled** derivation. The
+documented contributor loop is `nix develop` then `sbcl --script
+run-tests.lisp` — the same runner `checks.default` drives — and a shell built
+from the `doCheck = false` derivation has no `lispCheckDependencies` on its
+registry, so a package whose test system depends on a sibling gets a shell
+that cannot load its own test system. It costs no extra build:
+`mkShell`'s `inputsFrom` takes a derivation's inputs, not its output.
+
+`systems` is iterated with `lib.genAttrs`, not flake-utils: the caller's list
+is the whole truth about which platforms exist, so an output for an
+undeclared system cannot exist.
+
+### Arguments
+
+| Argument | Default | Effect |
+|---|---|---|
+| `self` | required | The flake's own `self`; the treefmt gate needs every tracked file |
+| `pname` | required | Names the package, the derivation, the runner check and the docs site |
+| `asd` | required | Path to the `.asd`. The only place a version comes from |
+| `root` | required | What [`mkLispSource`](building.md#mklispsource) filters |
+| `systems` | required | Declared platforms, and only those |
+| `lispSystem` | `pname` | The ASDF system name, when it differs |
+| `meta` | `{ }` | The package's meta; also the docs site's, minus `mainProgram` |
+| `nixpkgs` | `null` | The caller's nixpkgs input; used only by the default `pkgsFor` |
+| `pkgsFor` | `import nixpkgs { … }` | Override to apply `config`/`overlays` in one place |
+| `forgeFor` | this library, per system | Override to hand in an instance you already have |
+| `src` | `null` | A ready-made source, bypassing `mkLispSource` entirely |
+| `sourceInclude` / `sourceExclude` | `[ ]` | `mkLispSource`'s escape hatches |
+| `lisp` | `ctx: ctx.pkgs.sbcl` | The implementation |
+| `lispDependencies` | `_: [ ]` | Sibling packages as built derivations, never registry strings |
+| `lispCheckDependencies` | `_: [ ]` | The same, for `doCheck` only |
+| `packageArgs` | `_: { }` | Extra `lispDerivation` arguments (`lispAsdPath`, `nativeLibraries`, …) |
+| `executable` | `null` | `mkExecutable` arguments; delivers a CLI from this package |
+| `runner` | `"run-tests.lisp"` | Drives `checks.default` and `apps.test` alike |
+| `timeoutSeconds` / `killAfterSeconds` | `600` / `30` | The runner's limits |
+| `docs` | `null` | `mkDocsSite` arguments; `null` omits the package *and* its check |
+| `treefmt` | `null` | `{ evalModule, module ? <nix-only default> }` |
+| `devShellPackages` | `_: [ ]` | Interactive-only tools for the generated shell |
+| `overlayPackages` | `[ "default" ]` | Which packages the overlay publishes; `[ ]` omits it |
+| `extraOutputs` | `_: { }` | Add-only, per output kind |
+| `overrideOutputs` | `_: { }` | Replace-only, per output kind |
+
+`root` has no default on purpose. `self` is the obvious one and does not
+work: a flake's `self` is an attrset carrying an `outPath`, `lib.fileset`
+refuses a string-like value for its root, and the failure then surfaces from
+inside `mkLispSource` naming neither `self` nor the argument that caused it.
+
+The default treefmt module formats Nix and only Nix. That is the standard's
+answer, not an oversight: a YAML formatter mangles a GitHub Actions `on:`
+key — it is the boolean `true` to a YAML 1.1 parser — and reformatting
+Markdown churns a whole docs tree for no reviewable gain.
+
+### The context record
+
+Every argument spelled `ctx -> …` above receives:
+
+| Field | Meaning |
+|---|---|
+| `system`, `pkgs`, `cl` | This system, its nixpkgs, this library instantiated for it |
+| `version` | The `.asd`'s, via [`fromAsdSystem`](versions.md#fromasdsystem) |
+| `src` | The resolved source — `mkLispSource`'s output, or your `src` |
+| `package` | The built `lispDerivation` (not available to the arguments it is built from) |
+| `docs`, `executable` | The built docs site and CLI, or `null` |
+| `lispDerivationArgs` | The exact attrset handed to `lispDerivation` |
+| `generated` | This preset's own output set for the system |
+
+`lispDerivationArgs` is what makes a hand-rolled delivery cheap: it is by
+definition what `mkExecutable`'s `args` wants, so
+`ctx.cl.mkExecutable { args = ctx.lispDerivationArgs; … }` from
+`overrideOutputs` still spells the package's identity once. `generated` lets
+an override *wrap* what it replaces —
+`generated.checks.default.overrideAttrs …` — instead of rebuilding it.
+
+### Two escape hatches, not one
+
+`extraOutputs` and `overrideOutputs` take the same shape and differ only in
+what they assert:
+
+- `extraOutputs` says **this name is new**. Colliding with a generated name
+  is an evaluation error, so a preset that grows a new generated check later
+  cannot silently shadow a caller's check of the same name — or be shadowed
+  by it, which of the two happening would otherwise depend on `//` order.
+- `overrideOutputs` says **this name already exists**. Naming something that
+  was never generated is an evaluation error, so a typo is a build failure
+  rather than an inert extra output nobody notices until the thing it was
+  meant to replace ships unmodified.
+
+A single overlay-style `final: prev:` channel cannot express that intent and
+therefore cannot check it. Only `packages`, `checks`, `apps` and `devShells`
+may be named: `formatter` is one value per system with nothing to merge into,
+and `overlays` is not per-system at all, so both are configured by argument
+and naming them here is an error that says so.
+
+The preset also refuses arguments that would create a second source of truth
+for something it computes. `packageArgs` may not set `pname`, `version`,
+`src`, `meta`, `lispSystem`, `lispSystems`, `lisp`, `lispDependencies`,
+`lispCheckDependencies` or `doCheck`; `docs` may not set `version`;
+`executable` may not set `args` or `lispDerivation`. Each rejection names the
+dedicated argument to use instead — and for `version` specifically, the
+alternative it prevents is exactly the hardcoded version string the org's
+conformance check greps for.
+
+`examples/org-preset/` exercises all of this, including the rejections.
