@@ -1,6 +1,6 @@
 # API index
 
-`cl-nix-forge.lib.${system}` is one flat attrset of 28 functions. This page
+`cl-nix-forge.lib.${system}` is one flat attrset of 29 functions. This page
 lists all of them; each row links to its full entry.
 
 The **Module** column preserves the `lib/core/` versus `lib/batteries/`
@@ -53,6 +53,7 @@ See [Flake outputs and delivery](outputs.md).
 
 | Function | Module | Summary |
 |---|---|---|
+| [`mkPackageFlake`](outputs.md#mkpackageflake) | `batteries/package-flake.nix` | Every output an org-standard package's flake declares, as one call |
 | [`mkExecutable`](outputs.md#mkexecutable) | `batteries/app.nix` | Deliver a standalone binary via `asdf:program-op` |
 | [`mkApp`](outputs.md#mkapp) | `batteries/outputs.nix` | A flake `apps.<system>.<name>` entry for a derivation |
 | [`mkTestApp`](outputs.md#mktestapp) | `batteries/outputs.nix` | `nix run .#test`, running the repo's `run-tests.lisp` |
@@ -83,7 +84,7 @@ reach for first.
 ## Keeping this page honest
 
 The invariant is that this index and `lib/default.nix` name exactly the same
-28 attributes. It is checkable in one command from the repository root:
+29 attributes. It is checkable in one command from the repository root:
 
 ```sh
 nix eval --impure --json --expr \
@@ -92,4 +93,7 @@ nix eval --impure --json --expr \
 ```
 
 A function added to `lib/default.nix` needs a row here and a full entry on
-the reference page for its group.
+the reference page for its group. Nothing enforces that, which is not a
+theoretical gap: `mkPackageFlake` was exported in v0.3.0, was referred to by
+name on three pages, and had neither a row here nor an entry anywhere until
+v0.4.1. Run the command above when adding to `lib/`.

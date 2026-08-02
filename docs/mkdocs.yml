@@ -117,6 +117,7 @@ nav:
       - Internals: reference/internals.md
   - Project:
       - Platform coverage: project/platform-coverage.md
+      - Release process: project/release-process.md
 
 not_in_nav: |
   notes/

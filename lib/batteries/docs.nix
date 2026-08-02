@@ -3,8 +3,10 @@
   # A generic mkdocs-material site builder. Deliberately doesn't guess at
   # any one project's fileset shape: pass `fileset` (built with
   # `lib.fileset.unions`/etc., same as any other Nix project) when the docs
-  # need something outside `root` -- e.g. a repo-root CHANGELOG.md a
-  # changelog page snippet-includes -- and plain `root` for the common
+  # need something outside `root` -- a repo whose config is at
+  # docs/mkdocs.yml but whose pages include a file from the repository root
+  # passes `root = ./.`, a `fileset` naming both, and
+  # `mkdocsYmlName = "docs/mkdocs.yml"` -- and plain `root` for the common
   # single-directory case. This one optional argument is what collapses
   # "two docs conventions that grew independently because nobody wanted to
   # touch the other one's derivation" into one function.

@@ -289,10 +289,10 @@ in
   #
   #   docs        -- attrs ? null. `mkDocsSite` arguments; `null` omits the
   #                  docs package AND its check entirely. `{ root = ./docs; }`
-  #                  is the common case (cl-prolog, cl-json-kit); a repo
-  #                  whose changelog page snippet-includes the top-level
-  #                  CHANGELOG.md (cl-weave) passes `root = ./.` with a
-  #                  `fileset` and `mkdocsYmlName = "docs/mkdocs.yml"`.
+  #                  is the common case (cl-prolog, cl-json-kit); a repo whose
+  #                  pages read a file outside docs/ (cl-weave) passes
+  #                  `root = ./.` with a `fileset` and
+  #                  `mkdocsYmlName = "docs/mkdocs.yml"`.
   #                  `pname` and `version` are filled in for both.
   #   treefmt     -- { evalModule, module ? <nix-only default> } ? null.
   #                  `evalModule` is `treefmt-nix.lib.evalModule`, taken as an
