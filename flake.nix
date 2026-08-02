@@ -17,16 +17,18 @@
       ...
     }:
     let
-      # Only platforms actually exercised, and CI exercises exactly one:
-      # x86_64-linux. aarch64-darwin was dropped in the 2026-08-01 revision of
-      # PACKAGE_STANDARD.md -- it was verified only by local development, which
-      # nothing enforces, so it advertised a platform nothing gated.
-      #
-      # This list is this repository's own, for its examples and docs outputs.
-      # It is NOT the list an adopter passes to `mkPackageFlake`: that one
-      # belongs to the adopter's flake, and `mkPackageFlake` iterates whatever
-      # it is given.
-      systems = [ "x86_64-linux" ];
+      # x86_64-linux is what CI gates; aarch64-darwin is the development
+      # machine. Every per-system output -- packages, checks, apps AND devShells
+      # -- comes from this one list, so leaving aarch64-darwin out takes `nix
+      # build` and `nix develop` off the development machine as well. That trade
+      # was made on 2026-08-01 and reverted on 2026-08-02; aarch64-darwin carries
+      # no CI gate, which PACKAGE_STANDARD.md's "systems" section accepts
+      # explicitly. aarch64-linux and x86_64-darwin are nobody's verification and
+      # are not declared.
+      systems = [
+        "x86_64-linux"
+        "aarch64-darwin"
+      ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
       pkgsFor = system: import nixpkgs { inherit system; };
