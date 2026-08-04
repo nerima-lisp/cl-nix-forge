@@ -62,7 +62,7 @@ in
   mkCheckMatrix = args: matrix.mkCheckMatrix (args // { inherit (asdfDerivation) lispDerivation; });
 
   # batteries/ -- optional, clearly-secondary conveniences.
-  inherit (version) fromAsdSystem asdSystemVersions;
+  inherit (version) fromAsdSystem asdSystemVersions asdSystemDependencies;
   inherit (checks) mkTestCheck mkCommandCheck;
   inherit (coverage) mkCoverageReport;
   inherit (docs) mkDocsSite;
