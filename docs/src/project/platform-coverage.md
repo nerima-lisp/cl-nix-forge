@@ -7,37 +7,55 @@ discovered.
 
 ## What the flake declares
 
-`flake.nix` declares one system:
+`flake.nix` declares two systems:
 
 - `x86_64-linux` — built by CI on every push and pull request
+- `aarch64-darwin` — the development machine; built by nobody but a
+  developer running `nix build` or `nix develop` locally
 
-Nothing else is advertised, because nothing else is verified. Until the
-2026-08-01 revision of the org package standard the list also carried
-`aarch64-darwin`, justified as "exercised by local development" — which is
-to say, by nothing any gate enforces. A declared platform that no gate builds
-is a claim, and this list is meant to be a record.
+The list has changed twice in three days, and the reason is worth recording
+because the two entries carry different guarantees. The 2026-08-01 revision
+of the org package standard dropped `aarch64-darwin`, on the grounds that
+declaring a platform is a promise to support it, and the only thing backing
+that promise was a developer's own machine — nothing any gate enforced. That
+reasoning still holds. It was reverted the next day anyway, because
+`mkPackageFlake` generates `packages`, `checks`, `apps`, *and* `devShells`
+from this one list: dropping `aarch64-darwin` from `systems` did not just
+remove an unverified package, it removed `devShells.aarch64-darwin` too,
+taking `nix build` and `nix develop` off the development machine along with
+everything else. The cost of that consistency outweighed what it bought.
+
+**`aarch64-darwin` carries no CI gate, and the org standard accepts this
+explicitly.** Its only guarantee is that a developer runs it day to day; a
+change that breaks only `aarch64-darwin` passes CI clean. Declaring it
+anyway is a bet that a working `nix develop` on the maintainer's machine is
+worth more than the inconsistency of an unverified platform in the list.
+Adding a macOS runner to CI would remove the need for that bet.
 
 The list is this repository's own, for its examples and its documentation
 site. It is **not** the list an adopter passes to
 [`mkPackageFlake`](../reference/outputs.md#mkpackageflake): that one belongs
 to the adopter's flake, and `mkPackageFlake` iterates whatever it is given.
-Declaring `aarch64-darwin` there remains entirely supported.
 
 ## What CI does
 
 `.github/workflows/ci.yml` has a single job, `check`, on `ubuntu-latest`. It
 runs two steps:
 
-1. `nix flake check --no-build --no-write-lock-file` — *evaluates* every
-   declared system. There is no `--all-systems`: exactly one system is
-   declared, so the flag would widen nothing, and the package standard
-   forbids it for that reason.
+1. `nix flake check --no-build --no-write-lock-file` — *evaluates* the
+   outputs for the runner's own system, `x86_64-linux`. Without
+   `--all-systems`, `nix flake check` scopes itself to the current system by
+   default, so `aarch64-darwin` is neither evaluated nor built here. The
+   package standard forbids `--all-systems` outright: `ubuntu-latest` cannot
+   produce an `aarch64-darwin` derivation, so passing it would fail on a
+   platform mismatch rather than widen coverage.
 2. A loop that `nix build`s every check for the host system — that is,
    `x86_64-linux`.
 
-Evaluation and build therefore now cover the same set, which they did not
-while `aarch64-darwin` was declared: it was evaluated by CI and built by no
-one but a developer running `nix flake check` on a Mac.
+Evaluation and build therefore cover the same set, `x86_64-linux` alone.
+`aarch64-darwin` is exercised by nothing CI does; its only verification is a
+developer running `nix build` or `nix flake check` on that architecture
+locally.
 
 ## The consequence, stated plainly
 

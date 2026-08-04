@@ -51,7 +51,7 @@ As a flake input, pinned to a release tag:
 
 ```nix
 inputs.cl-nix-forge = {
-  url = "github:nerima-lisp/cl-nix-forge/v0.4.1";
+  url = "github:nerima-lisp/cl-nix-forge/v0.4.2";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
@@ -121,8 +121,11 @@ nix build .#docs                         # the documentation site
 
 `nix flake check --no-build --no-write-lock-file` evaluates the checks without
 building them, which is what catches an evaluation-time assertion. There is no
-`--all-systems`: the flake declares exactly one system, `x86_64-linux`, so the
-flag would widen nothing. That is also the only platform any gate builds; see
+`--all-systems`: the flake declares two systems, `x86_64-linux` and
+`aarch64-darwin`, but CI runs on `ubuntu-latest`, which cannot produce an
+`aarch64-darwin` derivation — the flag would fail on a platform mismatch
+rather than widen coverage. `x86_64-linux` is the only platform any gate
+builds; see
 [Platform coverage](docs/src/project/platform-coverage.md) for what that
 leaves unverified.
 
