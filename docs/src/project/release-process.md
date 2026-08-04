@@ -20,7 +20,7 @@ along with it, and a plain `VERSION` file replaces it.
 
 Two alternatives were rejected:
 
-- **`version = "0.4.2"` in `flake.nix`.** The org conformance rule is
+- **`version = "0.5.0"` in `flake.nix`.** The org conformance rule is
   literally "version is not hardcoded in `flake.nix`".
 - **Derive it from the git tag.** Unavailable under pure evaluation, which
   is the only mode `nix flake check` and every consumer's lock file use.
@@ -86,8 +86,8 @@ docs tree fails the release rather than the deploy that follows it.
 3. Tag the merge commit and push the tag:
 
    ```sh
-   git tag -a v0.4.2 -m "cl-nix-forge v0.4.2"
-   git push origin v0.4.2
+   git tag -a v0.5.0 -m "cl-nix-forge v0.5.0"
+   git push origin v0.5.0
    ```
 
 4. `release.yml` verifies the tag against `VERSION`, builds every check, and
@@ -98,7 +98,7 @@ docs tree fails the release rather than the deploy that follows it.
 5. Write the notes and publish:
 
    ```sh
-   gh release edit v0.4.2 --notes-file notes.md --draft=false
+   gh release edit v0.5.0 --notes-file notes.md --draft=false
    ```
 
 ## What a consumer pins
@@ -107,7 +107,7 @@ A release tag, never the branch:
 
 ```nix
 inputs.cl-nix-forge = {
-  url = "github:nerima-lisp/cl-nix-forge/v0.4.2";
+  url = "github:nerima-lisp/cl-nix-forge/v0.5.0";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
