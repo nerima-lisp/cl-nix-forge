@@ -18,7 +18,7 @@ side) is directly usable as another package's dependency.
   point by point with nixpkgs `lisp-modules` and `cl-nix-lite`, and
   [Non-goals](guide/non-goals.md) says what it refuses to do and why.
 - **Writing Nix against it** — the [API index](reference/api.md) lists all
-  29 exported functions with one line each and a link to the full entry.
+  30 exported functions with one line each and a link to the full entry.
   A nerima-lisp package's whole flake is one of them,
   [`mkPackageFlake`](reference/outputs.md#mkpackageflake).
 - **Deciding whether to trust it** — [Examples](guide/examples.md) is the

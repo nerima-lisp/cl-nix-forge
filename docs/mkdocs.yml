@@ -113,7 +113,7 @@ nav:
       - Dependencies and native libraries: reference/dependencies.md
       - Checks and coverage: reference/checks.md
       - Flake outputs and delivery: reference/outputs.md
-      - Versions: reference/versions.md
+      - Reading a .asd: reference/versions.md
       - Internals: reference/internals.md
   - Project:
       - Platform coverage: project/platform-coverage.md

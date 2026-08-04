@@ -59,7 +59,7 @@ inputs.cl-nix-forge = {
 A bare `github:nerima-lisp/cl-nix-forge` follows this repository's default
 branch, so a push here would change your build without warning.
 
-The library is `cl-nix-forge.lib.${system}`, a flat attrset of 29 functions.
+The library is `cl-nix-forge.lib.${system}`, a flat attrset of 30 functions.
 There is nothing to install into a Lisp image and no runtime component.
 
 A whole nerima-lisp package's flake is one call —
@@ -104,7 +104,7 @@ The documentation source lives in [docs/src/](docs/src/) and builds with
 - [Non-goals](docs/src/guide/non-goals.md)
 - [Examples](docs/src/guide/examples.md) — the nine worked examples in
   `examples/`, which double as this library's own test suite
-- [API reference](docs/src/reference/api.md) — all 29 exported functions
+- [API reference](docs/src/reference/api.md) — all 30 exported functions
 - [Platform coverage](docs/src/project/platform-coverage.md) — what CI
   verifies and what it does not
 - [Release process](docs/src/project/release-process.md) — where the version

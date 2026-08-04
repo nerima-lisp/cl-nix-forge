@@ -97,6 +97,41 @@
         in
         assert pkgs.lib.all (result: result) (builtins.attrValues results);
         pkgs.runCommand "version-extractor-contract" { } "touch $out";
+
+      # docs/src/reference/api.md and lib/default.nix are supposed to name the
+      # same attributes. Until this check nothing held them to it, and the gap
+      # was not theoretical: `mkPackageFlake` was exported in v0.3.0 and
+      # referred to by name on three pages while having no row in the index
+      # until v0.4.1, and `asdSystemDependencies` repeated the failure exactly.
+      #
+      # A substring search per attribute, not a table parse. A markdown parser
+      # would be a second thing to keep correct, and the failure it would buy
+      # -- a row filed under the wrong group -- is not the failure that has
+      # happened twice.
+      #
+      # The needle is the linked form `[`<name>`](`, not a bare `<name>`,
+      # because a bare mention is exactly what `mkPackageFlake` already had:
+      # matching prose would have called that state documented. Every row in
+      # the index links its function to the entry on its group's page, so the
+      # linked form is what "has a row" means here. `mkdocs build --strict`
+      # (checks.docs) then rejects a row whose anchor does not resolve, which
+      # is the other half of the invariant.
+      #
+      # One direction only. An index row for an attribute `lib/default.nix`
+      # no longer exports is a stale row, not an undocumented function, and it
+      # is not what this check exists to prevent.
+      apiIndexContract =
+        system:
+        let
+          pkgs = pkgsFor system;
+          index = builtins.readFile ./docs/src/reference/api.md;
+          undocumented = builtins.filter (name: !(pkgs.lib.hasInfix "[`${name}`](" index)) (
+            builtins.attrNames (clFor system)
+          );
+        in
+        assert pkgs.lib.assertMsg (undocumented == [ ])
+          "flake.nix: docs/src/reference/api.md has no row for ${nixpkgs.lib.concatStringsSep ", " undocumented} -- exported by lib/default.nix, so the API index is incomplete";
+        pkgs.runCommand "api-index-contract" { } "touch $out";
     in
     {
       lib = forAllSystems clFor;
@@ -120,8 +155,12 @@
           # deliberately broken input *fails*. `version-extractor-contract`
           # covers the one piece of pure evaluation no example can reach, since
           # `fromAsdSystem` parses a string and never builds anything.
+          # `api-index-contract` covers the other: whether the API index still
+          # names everything `lib/default.nix` exports is a fact about two
+          # files, which no example built from a source tree can observe.
           suite = (mergeAttr "checks" contributors) // {
             version-extractor-contract = versionExtractorContract system;
+            api-index-contract = apiIndexContract system;
           };
         in
         suite

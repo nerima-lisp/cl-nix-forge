@@ -1,6 +1,6 @@
 # API index
 
-`cl-nix-forge.lib.${system}` is one flat attrset of 29 functions. This page
+`cl-nix-forge.lib.${system}` is one flat attrset of 30 functions. This page
 lists all of them; each row links to its full entry.
 
 The **Module** column preserves the `lib/core/` versus `lib/batteries/`
@@ -62,14 +62,15 @@ See [Flake outputs and delivery](outputs.md).
 | [`mkDocsSite`](outputs.md#mkdocssite) | `batteries/docs.nix` | A mkdocs-material site as a package |
 | [`collect`](outputs.md#collect) | `batteries/siblings.nix` | Pull named sibling packages out of flake inputs |
 
-## Versions
+## Reading a `.asd`
 
-See [Versions](versions.md).
+See [Reading a `.asd`](versions.md).
 
 | Function | Module | Summary |
 |---|---|---|
 | [`fromAsdSystem`](versions.md#fromasdsystem) | `batteries/version.nix` | The `:version` a `.asd` declares, as one string |
 | [`asdSystemVersions`](versions.md#asdsystemversions) | `batteries/version.nix` | The same extraction, keyed by system name |
+| [`asdSystemDependencies`](versions.md#asdsystemdependencies) | `batteries/version.nix` | The `:depends-on` names, keyed by system, for a given `*features*` |
 
 ## Internals
 
@@ -84,7 +85,7 @@ reach for first.
 ## Keeping this page honest
 
 The invariant is that this index and `lib/default.nix` name exactly the same
-29 attributes. It is checkable in one command from the repository root:
+30 attributes. It is checkable in one command from the repository root:
 
 ```sh
 nix eval --impure --json --expr \
@@ -93,7 +94,20 @@ nix eval --impure --json --expr \
 ```
 
 A function added to `lib/default.nix` needs a row here and a full entry on
-the reference page for its group. Nothing enforces that, which is not a
-theoretical gap: `mkPackageFlake` was exported in v0.3.0, was referred to by
-name on three pages, and had neither a row here nor an entry anywhere until
-v0.4.1. Run the command above when adding to `lib/`.
+the reference page for its group. `checks.api-index-contract` in `flake.nix`
+now enforces the first half: it reads this file and every attribute name
+`lib/default.nix` exports, and fails evaluation — before anything is built —
+naming each attribute that has no row. `mkdocs build --strict`
+(`checks.docs`) enforces the rest, since a row whose link target does not
+exist is a dead anchor.
+
+The check searches for the linked form ``[`name`](`` rather than a bare
+mention, because a bare mention is exactly the state it exists to reject:
+`mkPackageFlake` was exported in v0.3.0, was referred to by name on three
+pages, and had neither a row here nor an entry anywhere until v0.4.1. That
+was written up here as an unenforced gap, and the gap promptly recurred —
+`asdSystemDependencies` was exported with no row on either count, which is
+what turned the paragraph into a check.
+
+The command above still answers "what is exported?" directly, which is the
+question to ask when writing the row rather than when verifying it.
