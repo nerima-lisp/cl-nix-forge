@@ -178,8 +178,8 @@ in
   # same `forAllSystems`, the same treefmt eval wired to both `formatter` and
   # `checks.formatting`, the same mkdocs package plus docs check, the same
   # run-tests.lisp check, the same `apps.test`/`apps.default` pair and the
-  # same devShell -- and drifts. cl-json-kit's copy is 199 lines, cl-prolog's
-  # 357, cl-weave's 516, and cl-prolog's `:version` regex has already diverged
+  # same devShell -- and drifts. cl-json-kit's copy is 199 lines, cl-prolog-kit's
+  # 357, cl-weave's 516, and cl-prolog-kit's `:version` regex has already diverged
   # from the identical one the other two still share. This function is the
   # standard as a function call, so the copies converge by construction.
   #
@@ -203,7 +203,7 @@ in
   #
   # Anything beyond that table is the caller's, through `extraOutputs` and
   # `overrideOutputs` -- and every real package has something: cl-weave has
-  # ten artifact checks and a CLI binary, cl-prolog a coverage package plus
+  # ten artifact checks and a CLI binary, cl-prolog-kit a coverage package plus
   # examples and app-test checks, cl-json-kit a benchmark devShell built with
   # `sbcl.withPackages`.
   #
@@ -289,7 +289,7 @@ in
   #
   #   docs        -- attrs ? null. `mkDocsSite` arguments; `null` omits the
   #                  docs package AND its check entirely. `{ root = ./docs; }`
-  #                  is the common case (cl-prolog, cl-json-kit); a repo whose
+  #                  is the common case (cl-prolog-kit, cl-json-kit); a repo whose
   #                  pages read a file outside docs/ (cl-weave) passes
   #                  `root = ./.` with a `fileset` and
   #                  `mkdocsYmlName = "docs/mkdocs.yml"`.
@@ -572,7 +572,7 @@ in
           # `mkDocsSite` already builds with `--strict`, so a broken link or
           # a page missing from the nav fails before this. The extra
           # assertion catches the other half: a --strict build that succeeded
-          # while emitting nothing. cl-prolog wrote this by hand; cl-json-kit
+          # while emitting nothing. cl-prolog-kit wrote this by hand; cl-json-kit
           # and cl-weave re-exported the package and did not.
           docsCheck =
             if docsSite == null then
@@ -621,7 +621,7 @@ in
             # `checks.default` and `apps.test` drive. Built from `package`,
             # whose `doCheck` is false, the resolved registry omits
             # `lispCheckDependencies` entirely, so a package whose test system
-            # depends on a sibling (cl-json-kit and cl-prolog both depend on
+            # depends on a sibling (cl-json-kit and cl-prolog-kit both depend on
             # cl-weave for tests and nothing else) gets a shell that cannot
             # load its own test system. Both migrations wrote the identical
             # `overrideOutputs` workaround for it, which is what made it this

@@ -1,4 +1,4 @@
-;;;; The delivered binary's system, in the shape cl-weave and cl-prolog use:
+;;;; The delivered binary's system, in the shape cl-weave and cl-prolog-kit use:
 ;;;; the .asd owns `:build-operation`, `:build-pathname` and `:entry-point`,
 ;;;; so `(asdf:operate 'asdf:program-op "forge-preset-cli")` in a REPL and
 ;;;; `mkPackageFlake`'s `executable` argument deliver the same binary.

@@ -42,8 +42,8 @@ dynamically computed version fails; pass `version` explicitly in those cases.
 The same extraction as an attrset keyed by system name.
 
 ```nix
-cl.asdSystemVersions ./cl-prolog.asd
-# => { "cl-prolog" = "1.1.0"; "cl-prolog/test" = "1.1.0"; }
+cl.asdSystemVersions ./cl-prolog-kit.asd
+# => { "cl-prolog-kit" = "1.1.0"; "cl-prolog-kit/test" = "1.1.0"; }
 ```
 
 For the rarer case of needing one specific system's version rather than the

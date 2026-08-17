@@ -40,7 +40,7 @@
                 :components ((:file "forge-preset")))))
 
 ;;;; `forge-preset-harness` is a TEST-ONLY dependency, in the shape
-;;;; cl-json-kit and cl-prolog both have: it is named by the `/test` system
+;;;; cl-json-kit and cl-prolog-kit both have: it is named by the `/test` system
 ;;;; and by nothing the library exports, so on the Nix side it reaches the
 ;;;; build only through `lispCheckDependencies`. Anything that has to run
 ;;;; this suite -- `checks.default`, `apps.test`, and `nix develop` -- must

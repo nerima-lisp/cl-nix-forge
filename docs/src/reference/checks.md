@@ -218,7 +218,7 @@ it, so it doubles as `checks.coverage` with no wrapper derivation.
 
 There is deliberately no threshold option, for two reasons.
 
-`cl-prolog` made this call explicitly: the report exists to make the number
+`cl-prolog-kit` made this call explicitly: the report exists to make the number
 visible and trending, not to block merges on a threshold nobody has agreed
 to yet.
 

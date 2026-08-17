@@ -33,7 +33,7 @@ in
     version.fromAsdSystem ./version-test-fixtures/versionless-system.asd == "7.0.0";
 
   # -- fromAsdSystem: agreement vs. drift -----------------------------------
-  # The cl-prolog shape: several defsystems, one repeated version.
+  # The cl-prolog-kit shape: several defsystems, one repeated version.
   agreeingVersionsAreAccepted =
     version.fromAsdSystem ./version-test-fixtures/agreeing-versions.asd == "1.1.0";
   conflictingVersionsFail = assertFails (
@@ -186,7 +186,7 @@ in
       shapes = [
         "cl-date-kit"
         "cl-cc-ast"
-        "cl-prolog"
+        "cl-prolog-kit"
         "cl-weave"
       ];
     };
