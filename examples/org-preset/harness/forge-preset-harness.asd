@@ -1,5 +1,5 @@
 ;;;; A sibling library the SUITE needs and the library does not -- cl-weave's
-;;;; role for both cl-json-kit and cl-prolog, whose `<pkg>/test` systems
+;;;; role for both cl-json-kit and cl-prolog-kit, whose `<pkg>/test` systems
 ;;;; depend on it and whose exported systems do not.
 ;;;;
 ;;;; Like support/, this directory is outside the preset's own source tree

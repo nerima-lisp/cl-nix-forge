@@ -4,5 +4,5 @@
 (defsystem "shapes"
   :depends-on ("cl-date-kit"
                :cl-cc-ast
-               #:cl-prolog
+               #:cl-prolog-kit
                (:version "cl-weave" "1.1.0")))

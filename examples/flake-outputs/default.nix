@@ -109,7 +109,7 @@ in
       ''
         # Kept: system definitions and Lisp source anywhere under the root --
         # including t/, which needs no clause of its own here, unlike the
-        # hand-written re-inclusion cl-prolog's denylist required.
+        # hand-written re-inclusion cl-prolog-kit's denylist required.
         test -f "$plain/forge-demo.asd"
         test -f "$plain/forge-demo.lisp"
         test -f "$plain/forge-demo-cli.lisp"

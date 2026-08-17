@@ -34,7 +34,7 @@ in
   # is compiled, so the report measures the library, not the tests.
   #
   # NO MINIMUM-COVERAGE THRESHOLD, and no option to add one. Two reasons.
-  # First, cl-prolog made this call deliberately: "the report exists to make
+  # First, cl-prolog-kit made this call deliberately: "the report exists to make
   # the number visible and trending, not to block merges on a threshold
   # nobody has agreed to yet". Second, sb-cover offers no supported way to
   # implement it -- `sb-cover:report` returns the index pathname and nothing

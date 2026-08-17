@@ -97,7 +97,7 @@ let
               readString (builtins.tail rest) (value ++ [ (builtins.head rest) ]) true
           else
             readString rest (value ++ [ char ]) escaped;
-      # `#` is not an atom terminator, so `#:cl-prolog` and `:cl-prolog` each
+      # `#` is not an atom terminator, so `#:cl-prolog-kit` and `:cl-prolog-kit` each
       # come back as ONE atom; `systemNameAt` relies on that to strip the
       # designator prefix textually instead of re-lexing.
       readAtom =

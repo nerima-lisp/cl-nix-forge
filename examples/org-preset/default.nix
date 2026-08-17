@@ -49,7 +49,7 @@ let
     # The test-only half of that pair, on every instance -- `forge-preset/test`
     # depends on it, so the generated `checks.default`, `apps.test` and
     # `devShells.default` all have to carry it and the package itself must
-    # not. This is cl-json-kit's and cl-prolog's exact shape (both depend on
+    # not. This is cl-json-kit's and cl-prolog-kit's exact shape (both depend on
     # cl-weave for tests and nothing else), and it is the one argument whose
     # resolved value `lispDerivation` drops when `doCheck` is false.
     lispCheckDependencies = _: [ harness ];
@@ -102,7 +102,7 @@ let
   };
 
   # The canonical instance: the whole standard output table, docs in their
-  # own directory (cl-prolog / cl-json-kit's shape).
+  # own directory (cl-prolog-kit / cl-json-kit's shape).
   flake = preset {
     docs.root = ./docs;
     treefmt = treefmtStub;
@@ -140,7 +140,7 @@ let
   hatches = preset {
     docs.root = ./docs;
 
-    # ADD: cl-weave's ten artifact checks and cl-prolog's examples check are
+    # ADD: cl-weave's ten artifact checks and cl-prolog-kit's examples check are
     # this. A name that collided with a generated one would be rejected --
     # see the negative below.
     extraOutputs = _: {
@@ -193,7 +193,7 @@ let
   # here are the ones genuinely specific to the binary.
   #
   # `lispSystem` is overridden because this package's CLI is a separate ASDF
-  # system (cl-prolog's and cl-json-kit's shape); cl-weave's, where the
+  # system (cl-prolog-kit's and cl-json-kit's shape); cl-weave's, where the
   # exported system delivers itself, needs no override at all and is covered
   # by the round-trip instance below.
   withCli = preset {
@@ -856,7 +856,7 @@ in
   # whose `doCheck` is false, so the resolved CL_SOURCE_REGISTRY omitted
   # `lispCheckDependencies` and `nix develop` handed a contributor a shell in
   # which the package's own test system does not load. cl-json-kit and
-  # cl-prolog independently wrote the same `overrideOutputs` workaround.
+  # cl-prolog-kit independently wrote the same `overrideOutputs` workaround.
   #
   # Four runs, and none of them is redundant:
   #   * the probe in the generated shell -- both dependency kinds resolve;

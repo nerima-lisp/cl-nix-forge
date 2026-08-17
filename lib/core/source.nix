@@ -26,7 +26,7 @@
   # cl-weave by diffing the `path:` source against the Git-backed one --
   # those directories were the whole difference.
   #
-  # Too restrictive, apparently. cl-prolog's filter re-includes `t/` with
+  # Too restrictive, apparently. cl-prolog-kit's filter re-includes `t/` with
   # the note that `cleanSourceFilter` drops it. It does not -- verified
   # against nixpkgs' `lib/sources.nix`, which has no rule matching `t`. The
   # test sources really were missing, but because they were untracked in a

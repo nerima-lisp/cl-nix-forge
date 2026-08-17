@@ -147,7 +147,7 @@ the whole build. Not hypothetical: `cl-weave`'s tree accumulates
 `coverage-report-*/` and `watch-forward-dependencies-*/` directories that no
 denylist written before those tools existed could have named.
 
-**Too restrictive, apparently.** `cl-prolog`'s filter re-includes `t/` with a
+**Too restrictive, apparently.** `cl-prolog-kit`'s filter re-includes `t/` with a
 note that `cleanSourceFilter` drops it. It does not — nixpkgs'
 `lib/sources.nix` has no rule matching `t`. The test sources really were
 missing, but because they were untracked in a Git-backed flake input, which

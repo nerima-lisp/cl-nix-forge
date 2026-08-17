@@ -76,7 +76,7 @@ one repository merge.
 
 The public API in `lib/` may change in a breaking way in any `0.x` release.
 It is deliberately not frozen: the library has not yet been applied to a real
-repository, and the first three adoptions (`cl-weave`, `cl-prolog`,
+repository, and the first three adoptions (`cl-weave`, `cl-prolog-kit`,
 `cl-json-kit`) are expected to expose gaps that are better fixed than worked
 around. `1.0.0` is the release that follows those migrations, not the one
 that precedes them.
