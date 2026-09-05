@@ -35,13 +35,13 @@ Two systems in one source tree, one depending on the other, exercising
 ### `native-library-consumer/`
 
 A native shared library, a direct consumer, and a consumer of that consumer,
-proving the search path propagates two hops without the middle package
+showing that the search path propagates two hops without the middle package
 needing to know about it. The test loads the shared library through CFFI and
 calls its exported symbol.
 
 ### `asd-search-path/`
 
-An ASDF definition below the source root, proving `lispAsdPath` makes both
+An ASDF definition below the source root, showing that `lispAsdPath` makes both
 its build and `asdf:test-system` discoverable.
 
 ### `check-only-dependencies/`
@@ -57,15 +57,15 @@ dependency, via `mkCheckMatrix`.
 
 ### `checks-and-coverage/`
 
-A system whose `.asd` defines a `test-op` that errors on purpose, so that a
-passing `mkScriptCheck` is itself proof the check never routed through
+A system whose `.asd` defines a failing `test-op`. The passing
+`mkScriptCheck` therefore uses its script entry point rather than
 `asdf:test-system`.
 
 Covers both entry-point forms, a `mkCommandCheck` producing JSON, text and
 directory artifacts (one filename contains a space, which survives only
 because `command` is an argv list), and an `mkCoverageReport`.
 
-Its failure paths are proved, not assumed: a deliberately failing entry point
+Its failure paths are covered by a failing entry point
 and a runaway loop killed by its time limit each run the real check phase
 inside a wrapper that passes only when that phase failed with an expected
 exit status — 1 for the failure, and 124 or 137 for the timeout, depending on
@@ -78,8 +78,8 @@ The flake surface a downstream repo actually writes: `mkLispSource`,
 identity, and an `mkExecutable` with a non-default dynamic space size and an
 extra image module.
 
-Nothing is asserted in a comment. Planted `.fasl`/`.core`/`coverage-report-*`
-fixtures are proved absent from the filtered source and `t/` proved present
+Planted `.fasl`/`.core`/`coverage-report-*` fixtures are absent from the
+filtered source and `t/` is present
 by listing it; the test app is run twice, once against a suite that passes
 and once against one that fails; and the delivered binary prints its own
 argv, dynamic space size and loaded modules so the checks can assert on all
@@ -94,8 +94,8 @@ the largest example here because the preset is the largest function.
 It builds several instances of the preset from one shared argument set and
 asserts what distinguishes them: the generated `checks.default` really is the
 package's own `run-tests.lisp` (the check *is* the generated derivation,
-built verbatim), and a copy pointed at a deliberately failing runner is
-proved to fail. A `formatter` and a `checks.formatting` are proved to come
+built verbatim), and a copy pointed at a failing runner fails. A `formatter`
+and a `checks.formatting` come
 from the same treefmt evaluation, by a stub module that plants a marker both
 must carry. An instance declaring no `docs` and no `treefmt` is asserted to
 have *no* `packages.docs`, `checks.docs` or `checks.formatting` — absence
@@ -105,13 +105,13 @@ exactly like one that holds.
 
 The escape hatches are exercised in both directions: an `extraOutputs` name
 that collides with a generated one and an `overrideOutputs` name that was
-never generated are each proved to be evaluation errors, while a legitimate
+never generated each produce evaluation errors, while a valid
 override *wraps* `ctx.generated.checks.default` rather than rebuilding it. On
-the delivery side, an `executable` is proved to inherit the package's
+the delivery side, an `executable` inherits the package's
 `lispDependencies` without repeating them, to round-trip `packageArgs`, and
 to reject `args`/`lispDerivation`. The devShell check is the one that
 motivated a fix: it loads a test-only dependency in the generated shell, and
-the same assertion is run against a shell built the pre-fix way to prove it
+the same assertion is run against a shell built the pre-fix way to verify it
 would have failed.
 
 ## Running them
@@ -137,6 +137,6 @@ nix build .#checks.x86_64-linux.default
 
 builds the whole suite through the aggregate every member is an input of.
 
-CI runs the evaluation and then builds each check individually. What that
-leaves unverified is stated in
+CI runs the evaluation and then builds each check individually. Platform
+coverage and its limits are stated in
 [Platform coverage](../project/platform-coverage.md).

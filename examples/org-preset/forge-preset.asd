@@ -8,10 +8,10 @@
 ;;;; already accessible), and no other example exercises that spelling of the
 ;;;; form `fromAsdSystem` has to recognise.
 ;;;;
-;;;; There is deliberately no `:in-order-to ((test-op (test-op ...)))` here.
+;;;; There is no `:in-order-to ((test-op (test-op ...)))` here.
 ;;;; `mkPackageFlake` drives run-tests.lisp through `mkScriptCheck`, so a
-;;;; conforming package needs no `asdf:test-system` route at all, and this
-;;;; suite passing is proof the preset never took one.
+;;;; conforming package needs no `asdf:test-system` route at all; this suite
+;;;; uses the script entry point instead.
 
 ;;;; The exported system also declares how to deliver itself -- cl-weave's
 ;;;; shape, where one system is both the library a sibling depends on and the

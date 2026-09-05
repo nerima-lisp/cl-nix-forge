@@ -7,13 +7,13 @@
 ;;;; `lispCheckDependencies`. Neither lives in this tree, so neither can be
 ;;;; resolved by the `$PWD` entry the shell puts first.
 ;;;;
-;;;; Deliberately NO `asdf:initialize-source-registry` -- unlike
+;;;; No `asdf:initialize-source-registry` -- unlike
 ;;;; run-tests.lisp, which anchors on its own directory so a released copy on
 ;;;; the registry cannot be tested by mistake. Here the exported
 ;;;; CL_SOURCE_REGISTRY IS the subject, so configuring anything would test
 ;;;; this file instead of the shell.
 ;;;;
-;;;; It exits 0 either way, on purpose: a missing system must be reported as
+;;;; It exits 0 either way: a missing system must be reported as
 ;;;; a line the caller greps for, not as a build failure indistinguishable
 ;;;; from the fifty other ways a Lisp run can die.
 

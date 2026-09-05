@@ -6,7 +6,7 @@ rather than read as an unfinished feature.
 
 ## Per-file FASL caching finer than one derivation per ASDF system
 
-Infeasible, not just undeveloped. Compiling file N of a serial ASDF system
+Infeasible. Compiling file N of a serial ASDF system
 requires files `1..N-1` to already be *loaded* — macros, `eval-when`, and
 CLOS class definitions all take effect at load time — so a file cannot be
 compiled as a pure function of its own text.
@@ -39,8 +39,7 @@ Not supported.
 
 ## Related decisions elsewhere
 
-Two more "deliberately absent" choices are narrow enough to live with the
-function they belong to, rather than here:
+Two related omissions are documented with the functions they belong to:
 
 - [`mkCoverageReport`](../reference/checks.md#mkcoveragereport) has no
   minimum-coverage threshold, and no option to add one.

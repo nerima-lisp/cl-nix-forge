@@ -6,7 +6,7 @@ already declares rather than out of a second copy in a flake: two read its
 one reads its `:depends-on`, so the registry a system is built against comes
 from the same file ASDF itself would read.
 
-The lexer is deliberately small — not a Common Lisp parser. It understands
+The lexer is small — not a Common Lisp parser. It understands
 string literals and both comment forms, which is exactly what is needed to
 avoid accepting commented-out metadata, and nothing else. A `.asd` is
 arbitrary Lisp; the moment the answer would require evaluating it, the right
@@ -71,7 +71,7 @@ Both arguments are required. The same lexer and the same `defsystem`
 recognition as above apply, so line comments, block comments and
 commented-out clauses are ignored here too.
 
-### `features` has no default on purpose
+### `features` has no default
 
 `features` is the `*features*` list the file's reader conditionals are
 evaluated against. `#+sbcl "cl-host-kit"` contributes `cl-host-kit` when
@@ -83,8 +83,8 @@ Defaulting the list would mean guessing, and the two available guesses are
 both wrong. A cl-nix-forge registry entry is a derivation built for one
 specific implementation, so an SBCL-only dependency silently included in an
 ECL build is not a harmless extra path on `CL_SOURCE_REGISTRY` — it is a
-build against the wrong implementation's code, discovered later and further
-away. Dropping conditionals instead loses real dependencies from the SBCL
+build against the wrong implementation's code and fail later in the build.
+Dropping conditionals instead loses real dependencies from the SBCL
 build. `cl-cli` is the org's live instance of this: its `.asd` guards
 `cl-host-kit` with `#+sbcl` precisely so the ECL portability gate never sees
 it, and a default in either direction would defeat that guard from the Nix

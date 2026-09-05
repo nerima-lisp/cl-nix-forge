@@ -14,6 +14,6 @@
    `(:source-registry (:directory ,root) :inherit-configuration))
   (asdf:load-system "forge-checks"))
 
-(format t "~&forge-checks: entering an uninterruptible loop on purpose.~%")
+(format t "~&forge-checks: entering an uninterruptible loop.~%")
 (finish-output *standard-output*)
 (uiop:symbol-call :forge-checks :spin)

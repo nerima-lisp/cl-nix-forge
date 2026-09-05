@@ -1,4 +1,4 @@
-;;;; The failing counterpart of run-tests.lisp, so a check can prove that
+;;;; The failing counterpart of run-tests.lisp, so a check can verify that
 ;;;; `mkTestApp` propagates a red suite instead of reporting success. It takes
 ;;;; the same load path as the real runner and then fails an assertion, rather
 ;;;; than exiting 1 immediately -- a runner that swallowed a Lisp-level failure

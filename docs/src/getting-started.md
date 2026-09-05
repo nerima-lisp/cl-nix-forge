@@ -60,7 +60,7 @@ rewrite files inside the immutable store. See
 ## Filter the source
 
 `src = ./.` hashes everything in the directory, including the `.fasl` files a
-local `sbcl --script run-tests.lisp` just dropped there. Use
+local `sbcl --script run-tests.lisp` wrote there. Use
 [`mkLispSource`](reference/building.md#mklispsource) instead:
 
 ```nix
@@ -68,7 +68,7 @@ src = cl.mkLispSource { root = ./.; };
 ```
 
 That is an allowlist: `.asd` and `.lisp` anywhere under `root`, and nothing
-else. A fixture the build genuinely needs is opted in explicitly:
+else. Other build inputs are opted in explicitly:
 
 ```nix
 src = cl.mkLispSource {

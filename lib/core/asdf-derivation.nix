@@ -8,49 +8,8 @@ let
   inherit (dedup) ancestryWalker;
   inherit (native) nativeLibraryEnv;
 
-  # Everything cl-nix-forge knows about a Lisp implementation lives in this
-  # ONE table. Adding an implementation is a one-row change: nothing else in
-  # this file (or in matrix.nix, or in script-check.nix, or in
-  # batteries/app.nix) branches on implementation name, and there is no
-  # second table that could drift out of agreement with this one.
-  #
-  # That claim survived first contact. Adding CCL, CLISP, ABCL and Clasp
-  # needed no new conditional anywhere -- but it did need `scriptFlagsOf` to
-  # shell-quote each word instead of joining them raw, because ABCL's row is
-  # the first whose flags contain a space. That was the row VOCABULARY being
-  # too weak, not the abstraction leaking: every consumer still just asks
-  # for "the flags" and appends a file.
-  #
-  #   scriptFlags :: [ String ] -- the argv words that make the
-  #     implementation run, non-interactively, the script file named by the
-  #     immediately following argument. A list of words rather than one
-  #     command string because the two consumers need it at different
-  #     levels: `lispDerivation` splices a whole shell command into a build
-  #     phase, while `lispScript` bakes argv words into a makeWrapper
-  #     `--add-flags`. Expressing the flags once and deriving both (see
-  #     `scriptFlagsOf` and `invoke`) is what keeps the row authoritative.
-  #     A list, not a single string, because implementations disagree on
-  #     arity here -- SBCL's `--script` is one word, CCL's row needs four,
-  #     and ABCL's needs an entire Lisp form as a single word.
-  #
-  # THE property every row must have, and the one that is worth measuring
-  # rather than assuming: a script that signals must make the process exit
-  # NON-ZERO. A row that runs the script but always exits 0 is worse than no
-  # row at all, because `asdf:test-system` failures then look like passes.
-  # ABCL's obvious invocation (`--batch --load FILE`) has exactly that bug --
-  # it enters the debugger, hits EOF and exits 0 -- which is why its row
-  # looks nothing like the others.
-  #
-  # Two shapes appear below, because implementations disagree on whether a
-  # script file is an operand of a flag or a bare argument:
-  #   * ends in a flag taking the file (`--script`, `--load`), or ends in
-  #     nothing at all (CLISP takes a bare lispfile operand);
-  #   * ends in `--`, for implementations whose only failure-propagating
-  #     entry point is a `--eval` form; the form reads the file back out of
-  #     the post-`--` argument list. ABCL is the only such row.
-  # Both shapes satisfy the contract above -- "the script file named by the
-  # immediately following argument" -- so no consumer has to know which
-  # shape a row uses.
+  # Keep implementation-specific script invocation in one table. Each row
+  # contains argv words placed before the script path.
   lispImplementations = {
     # `--script` implies --no-sysinit/--no-userinit/--disable-debugger, and
     # --disable-debugger is what turns an unhandled condition into exit 1.
@@ -66,7 +25,7 @@ let
     # argument parser sees it); it is what routes an unhandled condition to
     # `abnormal-application-exit`, i.e. `(quit -1)` -> exit status 255.
     #
-    # Caveat, deliberately accepted: once the loaded file returns, `--batch`
+    # Once the loaded file returns, `--batch`
     # still reads a listener from stdin and only exits at EOF. Every build
     # phase gets stdin from /dev/null, so `lispDerivation` and `mkScriptCheck`
     # exit immediately -- but a `lispScript` wrapper run on a terminal will
@@ -115,36 +74,19 @@ let
 
   # Single lookup point, so every entry point reports an unsupported
   # implementation with the same actionable message. `context` names the
-  # public function the caller actually reached this through.
+  # public function through which the caller reached this lookup.
   implementationOf =
     context: implementation:
     lispImplementations.${implementation}
       or (throw "cl-nix-forge ${context}: unsupported lispImplementation \"${implementation}\"; add a row for it to lib/core/asdf-derivation.nix's `lispImplementations` table");
 
-  # The argv words preceding the script path, each shell-quoted and then
-  # whitespace-joined: exactly what belongs on a shell command line before
-  # the file argument, and also exactly what makeWrapper's `--add-flags`
-  # takes -- `--add-flags` is copied verbatim into a Bash wrapper and
-  # re-parsed by Bash at run time, so the two consumers agree on quoting.
-  #
-  # Quoting each word rather than joining them raw is what lets a row hold a
-  # word containing spaces (ABCL's `--eval` form) without it splitting into
-  # several arguments. Before any row needed that, raw joining happened to
-  # produce the same string, so this is the `[ String ]` contract finally
-  # being honoured rather than a new one.
+  # Both build phases and `makeWrapper --add-flags` parse this as shell text;
+  # quote each argv word before joining it so values containing spaces stay
+  # single arguments.
   scriptFlagsOf =
     context: implementation: lib.escapeShellArgs (implementationOf context implementation).scriptFlags;
 
-  # Non-interactive invocation of a Lisp implementation on a script file,
-  # as a shell command for a build phase.
-  #
-  # `file` is escaped, not merely double-quoted: this file's own callers
-  # always pass a `builtins.toFile` store path, but `invoke` is public and
-  # script-check.nix hands it a caller-written repository-relative path,
-  # where a `$` would silently expand to nothing and a `"` would end the
-  # quoting outright. `lib.escapeShellArg` preserves string context, which
-  # is load-bearing -- a generated script's context is the only reason Nix
-  # makes it an input of the derivation whose buildPhase names it.
+  # Escape the path because callers may pass a repository-relative filename.
   invoke =
     context: implementation: lisp: file:
     "${lib.getExe lisp} ${scriptFlagsOf context implementation} ${lib.escapeShellArg file}";
@@ -222,7 +164,7 @@ rec {
   # entry point as a build phase) can reuse the single table instead of
   # rebuilding a command from `scriptFlags` -- which would be exactly the
   # second construction site this file exists to not have. `implementationOf`
-  # stays internal on purpose: it hands back a raw row, and a caller holding
+  # stays internal: it hands back a raw row, and a caller holding
   # a row would once again be branching on the table's shape. Anything a
   # consumer legitimately needs from a row gets an accessor here instead.
   inherit
@@ -367,7 +309,7 @@ rec {
           otherDoCheck = otherArgs.doCheck or false;
           mergedDoCheck = doCheck || otherDoCheck;
 
-          # Deliberately conservative: a `false` here never means "these
+          # Conservative behavior: a `false` here never means "these
           # differ", it means "not provably identical". Nix reports two
           # functions as unequal even when they are the same lambda, and a
           # comparison can itself raise (so it runs under tryEval), while

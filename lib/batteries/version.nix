@@ -3,7 +3,7 @@ let
   # Every failure carries the file, because the caller's Nix expression only
   # mentions a path -- the offending line is in a .asd they have to go open.
   # `caller` is the public function's own name so a failure points at the entry
-  # point that was actually used.
+  # point that the caller used.
   mkFail =
     caller: asdFile: message:
     throw "cl-nix-forge ${caller}: ${message} in ${toString asdFile}";
@@ -12,7 +12,7 @@ let
   # conditionals in a `:depends-on` list fire. The version-only entry points
   # have no feature set to offer and never force `dependencies`, so they pass
   # this sentinel: if that ever stops being true the result is a loud internal
-  # error naming the mistake, not a silent `[ ]` that would quietly resurrect
+  # error naming the mistake, not a silent `[ ]` that would restore
   # the `#+sbcl` over-reporting this module exists to avoid.
   featuresUnused = throw (
     "cl-nix-forge: internal error -- `:depends-on` reader conditionals were "
@@ -33,9 +33,8 @@ let
   # walking. Correspondingly, nothing that steers the walk -- any `next` index
   # below -- may depend on a feature test or fail.
   #
-  # This is deliberately a small lexer, not a Common Lisp parser: it understands
-  # strings and the two comment forms needed to avoid accepting commented-out
-  # metadata, and nothing else. A .asd is arbitrary Lisp -- the moment we would
+  # This lexer handles strings and the two comment forms needed to avoid
+  # accepting commented-out metadata. A .asd is arbitrary Lisp; the moment we would
   # have to evaluate it to know the answer, the right response is to fail and
   # make the caller pass `version` explicitly.
   defsystemForms =
@@ -170,7 +169,7 @@ let
       # inside `(in-package #:asdf-user)`, which is what ASDF's own template
       # emits) and the two package-qualified ones -- ASDF exports `defsystem`
       # from both the `asdf` and `asdf/defsystem` packages. Nothing else is
-      # guessed at; an unrecognised operator simply is not a defsystem form.
+      # guessed at; an unrecognised operator is not a defsystem form.
       # The comparison is on the lowercased token because the CL reader
       # upcases, so `DEFSYSTEM` and `defsystem` denote the same symbol.
       defsystemOperators = [
@@ -190,7 +189,7 @@ let
       # one plain lowercase string so callers get a single predictable key
       # shape. (ASDF itself keeps a *string* designator case-sensitive and only
       # downcases symbols; a uniform rule is worth the divergence, since a
-      # mixed-case system name does not occur in practice and a caller that hit
+      # mixed-case system names are unsupported, and a caller that hit
       # one would get a missing-key error, not a wrong answer.)
       systemNameAt =
         index:
@@ -207,8 +206,8 @@ let
       # A feature in a reader conditional is spelled with exactly the same
       # three designator shapes a system name is -- `#+sbcl`, `#+:sbcl` and
       # `#+#:sbcl` all test the `SBCL` feature -- so it is normalised by the
-      # same rule. The caller's `features` go through it too, which is why
-      # passing `[ ":sbcl" ]` cannot silently disagree with a `#+sbcl` in the
+      # same rule. The caller's `features` go through it too, so passing
+      # `[ ":sbcl" ]` cannot silently disagree with a `#+sbcl` in the
       # file and leave a dependency mysteriously absent.
       featureName = text: lib.toLower (lib.removePrefix ":" (lib.removePrefix "#" text));
       presentFeatures = map featureName features;
@@ -321,7 +320,7 @@ let
               next = listEnd;
             }
         else if token.type == "close" then
-          # Deliberately does NOT consume the `)`: the caller has to see it to
+          # This does NOT consume the `)`: the caller has to see it to
           # recognise a conditional left dangling at the end of a list.
           {
             value = fail "a reader conditional has no feature expression";
@@ -543,7 +542,7 @@ let
       scan =
         index: depth: open: closed:
         if index == tokenCount then
-          # A truncated file leaves forms open. Report what was found rather
+          # A truncated file leaves forms open. Report the available context rather
           # than validating paren balance -- that is the Lisp reader's job, and
           # a half-written .asd will fail loudly at build time anyway.
           closed ++ open
@@ -733,7 +732,7 @@ in
   # other systems have to be reachable before this one will load.
   #
   # `features` is the implementation's feature list -- `[ "sbcl" ]`, `[ "ecl" ]`
-  # -- and is REQUIRED, deliberately without a default. The answer genuinely
+  # -- and is required without a default. The answer
   # differs between implementations: `cl-cli.asd` writes
   # `:depends-on ("uiop" #+sbcl "cl-host-kit")` so that ECL never sees a system
   # that wraps `sb-posix`, and each entry here becomes a derivation built for

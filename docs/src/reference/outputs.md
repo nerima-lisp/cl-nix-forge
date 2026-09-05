@@ -84,7 +84,7 @@ A delivered image may therefore assume that `share/common-lisp/source/` exists
 under the installation prefix of the file it is running out of — the parent of
 the directory holding `sb-ext:*runtime-pathname*` on the `program-op` path, and
 of the one holding `sb-ext:*core-pathname*` on the Darwin fallback — and
-nothing more. Both anchors are covered deliberately: on the Darwin fallback the
+nothing more. Both anchors are covered: on the Darwin fallback the
 running image is a bare `.core` inside an intermediate derivation, so a tree
 installed only into `$out` would sit somewhere that image cannot name. That
 derivation gets the real tree and `$out` gets a symlink to it, which makes the
@@ -121,8 +121,8 @@ The `.asd` owns everything about *what* is built: `:build-operation`,
 system needs. None of those are Nix options here, and adding them would give
 a system two places to disagree about its own entry point.
 
-Nix owns the *invocation* of the Lisp that performs the dump. Two knobs that
-look like they belong in that list deliberately are not:
+Nix owns the *invocation* of the Lisp that performs the dump. Two knobs are not
+options here:
 
 `save-runtime-options`
 
@@ -152,16 +152,8 @@ via `save-lisp-and-die` and wraps `sbcl --core` with `makeWrapper`. The
 read back through ASDF's `component-entry-point` at build time rather than
 duplicated in Nix.
 
-The evidence is one observation, recorded in `lib/batteries/app.nix` and not
-to be overstated. On aarch64-darwin with SBCL 2.6.6, a bare
-`(asdf:operate 'asdf:program-op "greeter-app")` under `sbcl --script` had not
-completed after five minutes and had written no file at the system's
-`:build-pathname`; it was killed at that point. That is "does not finish in a
-workable time", not "provably never finishes". A hand-written
-`sb-ext:save-lisp-and-die :executable t` on the same host completed in
-seconds and produced a working binary, which places the fault in
-`program-op`'s delivery rather than in SBCL's dumper. No upstream bug ID is
-cited because none could be identified with confidence.
+The fallback is based on one observation; the test conditions and its limits
+are recorded in [Platform coverage](../project/platform-coverage.md).
 
 This is the branch CI never builds; see
 [Platform coverage](../project/platform-coverage.md).
@@ -253,7 +245,7 @@ by `lispDerivation` already named it once, and an overlay that repeats the
 name is one rename away from exporting `pkgs.cl-weave` from a package called
 something else.
 
-`names` is not "all of them" on purpose — `packages.docs` must not become
+`names` is not "all of them" — `packages.docs` must not become
 `pkgs.docs`.
 
 It reads the system from `prev`, not `final`. The attribute *names* here are
@@ -294,7 +286,7 @@ entry that makes the tree you are standing in take precedence, and
 prepending any registry the caller had already exported exactly as the build
 does.
 
-`ASDF_OUTPUT_TRANSLATIONS` is deliberately left alone. The build sets it to
+`ASDF_OUTPUT_TRANSLATIONS` is left alone. The build sets it to
 the identity mapping so fasls land beside their sources and the output stays
 reusable as a registry entry; a REPL wants the opposite, because fasls
 dropped into the working tree are precisely the artefacts `mkLispSource` then
@@ -312,10 +304,10 @@ output, so nothing realises `enableCheck` itself; the check dependencies are
 pulled in, and the check that runs the suite builds those anyway.
 `mkPackageFlake`'s generated `devShells.default` does exactly this.
 
-A `pkgs.sbcl.withPackages`-built Lisp in `extraPackages` composes, which was
-not obvious and was checked: `mkShell` puts `packages` ahead of everything
-from `inputsFrom` on `PATH`, so the wrapped Lisp wins over the plain one the
-derivation pulls in, and nixpkgs builds that wrapper with
+An `extraPackages` Lisp built with `pkgs.sbcl.withPackages` composes because
+`mkShell` puts `packages` ahead of everything from `inputsFrom` on `PATH`, so
+the wrapped Lisp wins over the plain one the derivation pulls in. Nixpkgs
+builds that wrapper with
 `--prefix CL_SOURCE_REGISTRY` rather than `--set`, so its packages prepend to
 the registry exported here rather than replacing it.
 
@@ -346,7 +338,7 @@ packages.${system}.docs = cl.mkDocsSite {
 | `strict` | `true` | Promote broken links and pages missing from the nav to build failures |
 | `mkdocsYmlName` | `"mkdocs.yml"` | Config file name inside `root` |
 
-It deliberately does not guess at any one project's fileset shape. Pass
+It does not infer any one project's fileset shape. Pass
 `fileset`, built with `lib.fileset.unions` like any other Nix project, when
 the `mkdocs.yml` is not itself the root of what the build must see — a repo
 whose config sits at `docs/mkdocs.yml` but whose pages include a file from
@@ -484,8 +476,7 @@ undeclared system cannot exist.
 | `extraOutputs` | `_: { }` | Add-only, per output kind |
 | `overrideOutputs` | `_: { }` | Replace-only, per output kind |
 
-`root` has no default on purpose. `self` is the obvious one and does not
-work: a flake's `self` is an attrset carrying an `outPath`, `lib.fileset`
+`root` has no default. A flake's `self` is an attrset carrying an `outPath`, and `lib.fileset`
 refuses a string-like value for its root, and the failure then surfaces from
 inside `mkLispSource` naming neither `self` nor the argument that caused it.
 

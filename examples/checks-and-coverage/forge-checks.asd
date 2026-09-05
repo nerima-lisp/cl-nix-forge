@@ -4,12 +4,11 @@
   :components ((:file "forge-checks"))
   :in-order-to ((asdf:test-op (asdf:test-op "forge-checks/test"))))
 
-;; This test-op deliberately errors. It stands in for cl-weave's real
+;; This test-op errors. It stands in for cl-weave's real
 ;; constraint: a suite that itself performs test-op cannot also be driven BY
 ;; an enclosing test-op, because ASDF then sees the same operation twice on
 ;; one plan and rejects it as a circular dependency. Because this errors, a
-;; passing `mkScriptCheck` over this system is by itself proof that the check
-;; did not route through `asdf:test-system`.
+;; `mkScriptCheck` must therefore avoid routing through `asdf:test-system`.
 (asdf:defsystem "forge-checks/test"
   :depends-on ("forge-checks")
   :components ((:file "forge-checks-test"))

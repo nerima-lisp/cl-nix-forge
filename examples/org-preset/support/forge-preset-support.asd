@@ -1,4 +1,4 @@
-;;;; A sibling library, deliberately OUTSIDE the preset's own source tree
+;;;; A sibling library located OUTSIDE the preset's own source tree
 ;;;; (`common.sourceExclude` drops this directory), so the only route by
 ;;;; which the delivered binary can reach it is `mkPackageFlake`'s
 ;;;; `lispDependencies` argument. That is what makes the `executable` check

@@ -129,7 +129,7 @@ src = cl.mkLispSource { root = ./.; };
 |---|---|---|
 | `root` | required | Project root; a plain path or a store path (a flake's own `self`) both work |
 | `extensions` | `[ "asd" "lisp" ]` | Extensions taken as Lisp source anywhere under `root` |
-| `include` | `[ ]` | Filesets for anything else the build genuinely reads |
+| `include` | `[ ]` | Filesets for other build inputs |
 | `exclude` | `[ ]` | Filesets subtracted last |
 
 ### Why an allowlist
@@ -140,7 +140,7 @@ directions.
 
 **Too permissive.** `cleanSourceFilter` keeps `.fasl` and `.core` (it only
 drops `.o`/`.so`), keeps any directory whose name merely starts with
-`result`, and cannot know about the next artefact directory a tool invents. A
+`result`, and cannot predict the next artefact directory a tool creates. A
 working tree that has had `sbcl --script run-tests.lisp` run in it therefore
 hashes differently from a clean checkout, so every local test run invalidates
 the whole build. Not hypothetical: `cl-weave`'s tree accumulates
@@ -155,14 +155,14 @@ the same comment goes on to say a filter cannot fix. A denylist gives no way
 to tell those two causes apart. An allowlist makes the question moot: `t/`
 is kept by the same rule that keeps `src/`, with no clause of its own.
 
-`extensions`, `include` and `exclude` are the escape hatches. A fixture the
-build genuinely needs and that is not Lisp source is opted in with `include`,
+`extensions`, `include` and `exclude` configure source selection. A non-Lisp
+build input is opted in with `include`,
 and its absence then fails loudly at build or test time — whereas a stray
 `.fasl` would silently change a hash. The default errs toward the loud
 failure.
 
-`extensions` deliberately omits `lsp` and `cl`: a project that uses them
-should say so, rather than have the default quietly widen for everyone.
+`extensions` omits `lsp` and `cl`: a project that uses them
+should say so, rather than widening the default for every project.
 
 ## `lispWithSystems`
 

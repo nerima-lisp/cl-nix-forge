@@ -1,9 +1,9 @@
-;;;; A run-tests.lisp-shaped entry point that fails on purpose.
+;;;; A run-tests.lisp-shaped entry point that fails.
 ;;;;
 ;;;; `checks.forge-checks-failing-entry-point-is-detected` runs this through
 ;;;; `mkScriptCheck` and asserts the resulting check really does fail. A test
 ;;;; harness that cannot report a failure is worse than no harness, and
-;;;; nothing but an actually-failing run proves it can.
+;;;; nothing but an actually-failing run verifies it can.
 
 (require "asdf")
 

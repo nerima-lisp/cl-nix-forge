@@ -3,8 +3,8 @@
 ;;;;     sbcl --script run-tests.lisp
 ;;;;     nix run .#test
 ;;;;
-;;;; Every nerima-lisp package exposes this same file at its root, which is why
-;;;; `mkTestApp` drives it rather than re-spelling an ASDF invocation in Nix.
+;;;; Every nerima-lisp package exposes this file at its root. `mkTestApp`
+;;;; drives it instead of duplicating an ASDF invocation in Nix.
 
 (require "asdf")
 

@@ -16,22 +16,8 @@
   # hand-rolled `save-lisp-and-die --eval` chain repeating that
   # information a second time in Nix.
   #
-  # SBCL's `program-op` embeds the Lisp image directly into the executable
-  # (`:executable t`), which is known to fail on Darwin (the same issue
-  # documented in nerima-lisp's own cl-tmux flake.nix). What was actually
-  # observed, once, on aarch64-darwin with SBCL 2.6.6: a bare
-  # `(asdf:operate 'asdf:program-op "greeter-app")` run under
-  # `sbcl --script` had not completed after five minutes and had written no
-  # file at the system's `:build-pathname`; it was killed at that point, so
-  # "does not finish in a workable time", not "provably never finishes". A
-  # hand-written `sb-ext:save-lisp-and-die :executable t` on the same host
-  # completes in seconds and produces a working binary, which is what puts
-  # the fault in `program-op`'s delivery rather than in SBCL's dumper. No
-  # upstream bug ID is cited because none could be identified with
-  # confidence; that single reproduction is the whole of the evidence.
-  #
-  # On Darwin with SBCL this function therefore falls back to the
-  # field-proven workaround: build a plain, non-executable `.core` via
+  # On Darwin with SBCL, use a plain, non-executable `.core` because
+  # `program-op` was observed not to produce a binary there. Build it with
   # `save-lisp-and-die` and wrap `sbcl --core` with `makeWrapper`. The
   # `.asd`'s own `:entry-point` is still the source of truth for the
   # fallback path too, read back via ASDF's own `component-entry-point` at
@@ -74,7 +60,7 @@
   # the parent of the directory holding `sb-ext:*runtime-pathname*` on the
   # `program-op` path, and of the one holding `sb-ext:*core-pathname*` on the
   # Darwin fallback -- and nothing more. Both anchors are covered
-  # deliberately: on the Darwin path the running image is a bare `.core` in
+  # On the Darwin path the running image is a bare `.core` in
   # an intermediate derivation, so a source tree installed only into `$out`
   # would be in a directory that image has no way to name. The core
   # derivation gets the real tree and `$out` gets a symlink to it, which
@@ -101,7 +87,7 @@
   #
   # Nix owns the *invocation* of the Lisp that performs the dump, which is
   # where `dynamicSpaceSize` and `imageRequires` below act. Two knobs that
-  # look like they belong in this list deliberately are not:
+  # are not options here:
   #
   #   save-runtime-options -- not an option because it cannot be turned
   #     off. `uiop:dump-image` hardcodes `:save-runtime-options t` whenever
@@ -369,7 +355,7 @@
                 # the wrapper would sit in a directory the running image
                 # cannot name -- which is precisely the shape of the bug
                 # this option exists to fix, and the reason the Darwin path
-                # is the one worth proving.
+                # is the one that exercises this option.
                 lib.optionalString installSource (installSourceCommands (loaded.ancestry.deps or [ ]))
               }
               runHook postInstall
@@ -386,9 +372,9 @@
           # `:save-runtime-options t` executable `program-op` produces:
           # without it the runtime keeps scanning for its own options and
           # eats a leading `--dynamic-space-size` meant for the
-          # application. There is deliberately no `--no-sysinit
+          # application. There is no `--no-sysinit
           # --no-userinit` here -- a core saved with a custom `:toplevel`
-          # never runs SBCL's init-file processing at all (verified), so
+          # never runs SBCL's init-file processing at all, so
           # those flags did nothing except appear in the application's
           # `sb-ext:*posix-argv*` as if the user had typed them.
           deliveredFlags =

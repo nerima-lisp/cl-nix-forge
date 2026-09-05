@@ -80,7 +80,7 @@ let
   };
 
   # The suite that must FAIL everywhere, inverted below. Without this, a row
-  # whose invocation runs the script but always exits 0 -- ABCL's obvious
+  # whose invocation runs the script but always exits 0 -- ABCL's
   # `--batch --load` does exactly that -- would make every check above look
   # green while testing nothing.
   failing = cl.mkCheckMatrix {
@@ -102,15 +102,13 @@ let
   # unless errexit aborts the phase at the Lisp invocation. And bash
   # documents that in a context where `-e` is being ignored (the condition
   # of an `if`, either side of `||`), NO command inside the compound
-  # command is affected by `-e` "even if -e is set" -- so the obvious
-  # `if ( set -e; ... )` reports success no matter what the Lisp did.
+  # command is affected by `-e` "even if -e is set" -- so the alternative
+  # `if ( set -e; ... )` does not propagate the Lisp exit status.
   #
   # Running the subshell as a plain command with errexit merely OFF in the
-  # parent is different: `set -e` inside it genuinely takes effect. That
-  # distinction was found by this check reporting a green result while SBCL
-  # was visibly printing "unhandled condition in --disable-debugger mode,
-  # quitting" three lines above -- i.e. the negative check had precisely the
-  # always-exits-0 bug it exists to detect.
+  # parent is different: `set -e` inside it takes effect. That
+  # The negative check must therefore fail when SBCL prints an unhandled
+  # condition in --disable-debugger mode, rather than accepting exit status 0.
   mustFail =
     drv:
     drv.overrideAttrs (old: {
@@ -131,8 +129,8 @@ let
 
   # `expectedFailure` is NOT a skip: the check is still built and still runs
   # the failing suite, it just does not fail the build. Pointing it at a
-  # suite that genuinely fails is the only way to show the difference -- the
-  # same suite is proven to fail by `matrix-demo-mustfail-check-sbcl`, so
+  # failing suite shows the difference -- the
+  # the same suite fails in `matrix-demo-mustfail-check-sbcl`, so
   # this derivation building at all is the "does not fail the build" half of
   # the claim, and `matrix-demo-expected-failure-ran` below is the "still
   # runs the check" half.

@@ -17,7 +17,7 @@
 
 ;; A failing ASSERT rather than a bare ERROR: this is how a real suite
 ;; fails, and ASSERT establishes a CONTINUE restart, so an implementation
-;; whose non-interactive mode quietly took that restart would still exit 0.
+;; whose non-interactive mode took that restart would still exit 0.
 ;; That is precisely the trap these negative checks exist to catch.
 (assert (eq :right (matrix-demo-fail:always-wrong)))
 

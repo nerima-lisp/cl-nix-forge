@@ -71,11 +71,11 @@ The branch is kept because an adopter may still declare `aarch64-darwin` in
 their own `systems`, and on that platform the fallback is what makes
 `mkExecutable` produce a binary.
 
-The observation that motivated the fallback is itself a single data point:
-aarch64-darwin, SBCL 2.6.6, no binary at the system's `:build-pathname` after
-five minutes, killed at that point. "Not workable", not "provably never
-terminates", and no upstream bug ID could be identified with confidence. See
-[`mkExecutable`](../reference/outputs.md#mkexecutable) for the full record.
+The fallback is based on one data point: on aarch64-darwin with SBCL 2.6.6,
+`program-op` produced no binary at the system's `:build-pathname` within five
+minutes. The test was stopped at that point; this establishes an impractical
+build time, not non-termination. See [`mkExecutable`](../reference/outputs.md#mkexecutable)
+for the implementation contract.
 
 ## Closing it
 

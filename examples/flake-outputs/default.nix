@@ -10,8 +10,8 @@ let
   # a local `sbcl --script run-tests.lisp` leaves lying around afterwards.
   src = cl.mkLispSource { root = ./.; };
 
-  # Both escape hatches, exercised so they cannot quietly rot. `include` opts
-  # in a tree the build genuinely reads (here the docs a `mkDocsSite` rooted
+  # Both escape hatches are covered by this example. `include` opts
+  # in a tree the build reads (here the docs a `mkDocsSite` rooted
   # at the repo would need); `exclude` subtracts last, for a delivery that
   # should not carry its own test sources.
   srcWithDocs = cl.mkLispSource {
@@ -69,7 +69,7 @@ let
     timeoutSeconds = 120;
   };
 
-  # Same runner, pointed at a suite that fails, so the check below can prove
+  # Same runner, pointed at a suite that fails, so the check below can verify
   # `nix run .#test` reports red rather than swallowing it.
   failingTestApp = cl.mkTestApp {
     pname = "forge-demo-red";
@@ -88,7 +88,7 @@ in
   packages.forge-demo-docs = docs;
 
   # Not built by `nix flake check` -- mkShell derivations refuse to build --
-  # so the CL_SOURCE_REGISTRY fix in mkDevShell is verified with `nix develop`
+  # so the CL_SOURCE_REGISTRY fix in mkDevShell is checked with `nix develop`
   # rather than by a check. The `sbcl.withPackages` entry mirrors
   # cl-json-kit's benchmark shell, which is the case that had to compose.
   devShells.forge-demo = cl.mkDevShell {

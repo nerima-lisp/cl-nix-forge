@@ -13,7 +13,7 @@ let
   };
 
   # An ECL build of the same source, only ever evaluated -- never built -- to
-  # prove that `mkCoverageReport` rejects a non-SBCL implementation during
+  # verify that `mkCoverageReport` rejects a non-SBCL implementation during
   # evaluation instead of producing an empty report at build time.
   forgeChecksEcl = cl.lispDerivation {
     lispSystem = "forge-checks";
@@ -22,15 +22,15 @@ let
     lisp = pkgs.ecl;
   };
 
-  # Proving a FAILURE path in Nix takes care. A derivation that fails is not a
+  # Testing a FAILURE path in Nix requires care. A derivation that fails is not a
   # check that passes, and `builtins.tryEval` (which the sibling examples use)
   # only sees evaluation errors, never build-time ones. So take the derivation
   # the library actually produced and invert nothing but its `checkPhase`: the
   # real phase runs verbatim in a subshell, and the check passes only when that
   # phase failed with one of the expected statuses.
   #
-  # The `set +e` / bare subshell / `$?` shape is load-bearing, and the obvious
-  # `( set -e; ... ) || status=$?` is WRONG. POSIX says errexit is ignored for
+  # The `set +e` / bare subshell / `$?` shape is load-bearing; the alternative
+  # `( set -e; ... ) || status=$?` is incorrect. POSIX says errexit is ignored for
   # any command of an AND-OR list but the last, and bash extends that
   # suppression into the subshell so thoroughly that an explicit `set -e`
   # inside does not restore it:
@@ -91,9 +91,8 @@ let
       '';
     });
 
-  # The org-standard entry point. forge-checks.asd's test-op errors on
-  # purpose, so this check passing is itself proof that it did not route
-  # through `asdf:test-system`.
+  # The org-standard entry point. forge-checks.asd's test-op raises an error
+  # by design, so this check fails if it routes through `asdf:test-system`.
   runTests = cl.mkScriptCheck {
     drv = forgeChecks;
     name = "forge-checks-run-tests";
@@ -143,7 +142,7 @@ let
 
   # One artifact of each shape: a JSON file validated with jq, a text file
   # validated by a shell assertion, and a directory. The text file's name
-  # contains a space on purpose -- it only survives because `command` is an
+  # contains a space -- it only survives because `command` is an
   # argv LIST run through `lib.escapeShellArgs`, never a concatenated string.
   artifacts = cl.mkCommandCheck {
     drv = forgeChecks;
@@ -217,7 +216,7 @@ in
   checks.forge-checks-coverage-report = coverage;
 
   # The report derivation already fails when cover-index.html is empty. This
-  # additionally proves the instrumentation reached the library's own source
+  # additionally verifies that instrumentation reached the library's own source
   # rather than reporting on an empty set of files.
   checks.forge-checks-coverage-is-populated =
     pkgs.runCommand "forge-checks-coverage-is-populated" { report = coverage; }

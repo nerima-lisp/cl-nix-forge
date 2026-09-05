@@ -8,8 +8,8 @@
   #
   # Too permissive. `lib.cleanSourceFilter` keeps `.fasl`/`.core` (it only
   # drops `.o`/`.so`), keeps any directory whose name merely starts with
-  # "result", and of course cannot know about the next artefact directory a
-  # tool invents. A working tree that has had `sbcl --script run-tests.lisp`
+  # "result", and cannot predict the next artefact directory a
+  # tool creates. A working tree that has had `sbcl --script run-tests.lisp`
   # run in it therefore hashes differently from a clean checkout, so every
   # local test run invalidates the whole build. That is not hypothetical:
   # cl-weave's tree accumulates `coverage-report-*/` and
@@ -22,18 +22,11 @@
   # `watch-forward-dependencies-*/` is NOT (it holds generated `.lisp`), so
   # `nix build path:.` still rehashes after a local watch run. What does
   # close it is the flake source being Git-backed: both directories are
-  # gitignored, so `nix build .#` and CI never see either. Measured on
-  # cl-weave by diffing the `path:` source against the Git-backed one --
-  # those directories were the whole difference.
+  # gitignored, so `nix build .#` and CI never see either.
   #
-  # Too restrictive, apparently. cl-prolog-kit's filter re-includes `t/` with
-  # the note that `cleanSourceFilter` drops it. It does not -- verified
-  # against nixpkgs' `lib/sources.nix`, which has no rule matching `t`. The
-  # test sources really were missing, but because they were untracked in a
-  # Git-backed flake input, which the same comment goes on to say a filter
-  # cannot fix. A denylist gives you no way to tell those two causes apart;
-  # an allowlist makes the question moot, because `t/*.lisp` is included by
-  # the same rule as `src/*.lisp` and needs no special case at all.
+  # A denylist cannot distinguish ignored files from files omitted by the
+  # source filter. An allowlist includes `t/*.lisp` through the same rule as
+  # `src/*.lisp`, so no special case is needed.
   #
   # So: name what an ASDF build reads (system definitions and Lisp source),
   # and let everything else be opted in. This is the same trade `crane`
@@ -43,11 +36,10 @@
   #   root       :: the project root. A plain path or a store path (a
   #                 flake's own `self`) both work.
   #   extensions :: [ String ] ? [ "asd" "lisp" ] -- file extensions taken
-  #                 as Lisp source anywhere under `root`. Deliberately not
-  #                 including "lsp"/"cl": nothing here uses them, and a
-  #                 project that does should say so rather than have the
-  #                 default quietly widen for everyone.
-  #   include    :: [ fileset ] ? [ ] -- anything else the build genuinely
+  #                 as Lisp source anywhere under `root`. It does not include
+  #                 `lsp` or `cl`: nothing here uses them, and a project that
+  #                 does should add them explicitly.
+  #   include    :: [ fileset ] ? [ ] -- other files the build
   #                 reads: `:static-file` fixtures, a CFFI grovel `.h`, the
   #                 `docs/` tree a `mkDocsSite` shares this source with.
   #   exclude    :: [ fileset ] ? [ ] -- subtracted last, for the rare

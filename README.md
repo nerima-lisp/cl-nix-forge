@@ -74,9 +74,8 @@ both. `cl-nix-forge` exists because of gaps neither closes:
 
 - **Multi-system repositories are a supported path.** One source tree
   exporting several interdependent ASDF systems builds as one deduplicated
-  derivation. `cl-nix-lite` has the same mechanism, but its own docs call
-  that API "an advanced API which doesn't work... do not use this unless you
-  are stubborn".
+  derivation. `cl-nix-lite` has the same mechanism, documented as an advanced
+  API rather than its default path.
 - **A Lisp dependency is not a Nix build input.** `lispDependencies` enter
   `CL_SOURCE_REGISTRY` and never `buildInputs`. Both prior options conflate
   the two.
@@ -90,7 +89,7 @@ both. `cl-nix-forge` exists because of gaps neither closes:
 
 The full point-by-point comparison, including what each project does better,
 is in [Why cl-nix-forge](docs/src/guide/why.md). What this library
-deliberately refuses to do — per-file FASL caching, lockfile version
+does not provide — per-file FASL caching, lockfile version
 unification, Quicklisp dist fetching, cross-compilation — is in
 [Non-goals](docs/src/guide/non-goals.md), with the reasoning for each.
 
@@ -126,8 +125,8 @@ building them, which is what catches an evaluation-time assertion. There is no
 `aarch64-darwin` derivation — the flag would fail on a platform mismatch
 rather than widen coverage. `x86_64-linux` is the only platform any gate
 builds; see
-[Platform coverage](docs/src/project/platform-coverage.md) for what that
-leaves unverified.
+[Platform coverage](docs/src/project/platform-coverage.md) for the supported
+systems and known coverage limits.
 
 `examples/` is the test suite. A change to `lib/` that no example exercises
 is a change nothing verifies.

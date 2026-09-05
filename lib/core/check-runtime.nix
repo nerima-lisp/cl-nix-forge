@@ -51,7 +51,7 @@
   #              a build log that scrolls past the command still attributes
   #              the failure.
   #   command :: String -- shell text, already quoted by the caller
-  #              (`lib.escapeShellArgs` for argv lists). Deliberately not a
+  #              (`lib.escapeShellArgs` for argv lists). Keep it as a
   #              list here: callers differ in how they build the command, and
   #              re-escaping an already-escaped string would corrupt it.
   withTimeLimit =

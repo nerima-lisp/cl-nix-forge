@@ -1,10 +1,5 @@
-#  The org preset, end to end: one `mkPackageFlake` call standing in for the
-#  hand-copied flake.nix that every nerima-lisp package currently carries.
-#
-#  Everything here is built from ONE package derivation. The instances below
-#  differ only in the arguments under test (docs shape, runner, escape
-#  hatches, declared systems), so `lispDerivation` resolves them all to the
-#  same store path and the extra instances cost only the outputs they add.
+#  End-to-end example for the org preset. Each instance varies only the
+#  argument under test and shares the same package derivation.
 {
   cl,
   pkgs,
@@ -13,12 +8,8 @@
 let
   system = pkgs.stdenv.hostPlatform.system;
 
-  # The two SIBLING packages that happen to live under this root but are not
-  # part of it. Named once, because the same list has to be the preset's
-  # `sourceExclude` and the exclusion the dev-shell probe's copy of the tree
-  # is built with -- a probe run in a tree that still contained them would
-  # resolve both from `$PWD` and prove nothing about either dependency
-  # argument.
+  # These sibling packages are excluded from the package source and the
+  # dev-shell probe. They remain available only through dependency entries.
   siblingRoots = [
     ./support
     ./harness
@@ -34,10 +25,8 @@ let
     # comment in lib/batteries/package-flake.nix.
     root = ./.;
     # flake.nix hands each example the `pkgs` and `cl` it built. Feeding them
-    # straight back in is what makes this example test THAT library rather
-    # than a second copy `mkPackageFlake` would otherwise re-import for
-    # itself -- and it is why those two arguments exist at all, since an
-    # example is never given a `nixpkgs` flake input.
+    # Reuse the instances supplied by the example flake so the test exercises
+    # the same library and package set as its caller.
     pkgsFor = _: pkgs;
     forgeFor = _: cl;
     timeoutSeconds = 300;
@@ -169,7 +158,7 @@ let
 
   # The dependency the delivered binary must carry. Built from its own root,
   # so its sources are in a store path of their own -- which is what the
-  # `installSource` checks below need in order to tell "the image found the
+  # `installSource` checks below need to tell "the image found the
   # tree shipped with it" apart from "the image found something".
   support = cl.lispDerivation {
     lispSystem = "forge-preset-support";
@@ -190,7 +179,7 @@ let
   # THE case the `executable` argument exists for. Everything the delivery
   # needs -- pname, version, src, meta and the `lispDependencies` entry --
   # comes from the preset's own resolved arguments; the only things spelled
-  # here are the ones genuinely specific to the binary.
+  # here are the ones specific to the binary.
   #
   # `lispSystem` is overridden because this package's CLI is a separate ASDF
   # system (cl-prolog-kit's and cl-json-kit's shape); cl-weave's, where the
@@ -213,7 +202,7 @@ let
   # the layout assertions. Without it, a check asserting the delivered tree
   # exists would pass just as well against a `mkExecutable` that installed
   # sources unconditionally -- which is a different, unrequested contract.
-  # The `pname` deliberately MATCHES the instance above, so the two
+  # The `pname` matches the instance above, so the two
   # deliveries share one compile of `forge-preset-cli` and differ only in the
   # delivery step under test.
   withCliNoSource = preset {
@@ -318,14 +307,14 @@ let
   # guarding it) but not the build script. A guard that lives inside the
   # script -- `mkExecutable`'s duplicate-source-directory check does -- is
   # only reached by forcing the store path. Reading `.version` instead
-  # reports success and proves nothing, which is how this was found.
+  # evaluates successfully without running the build script.
   packagePathEvaluates =
     candidate: (builtins.tryEval candidate.packages.${system}.default.outPath).success;
 
-  # Proving a BUILD failure takes care: a derivation that fails is not a check
+  # A BUILD failure needs care: a derivation that fails is not a check
   # that passes, and `tryEval` sees only evaluation errors. This runs the real
   # check phase verbatim in a subshell and passes only when it failed. The
-  # `set +e` / bare-subshell / `$?` shape is load-bearing and the obvious
+  # `set +e` / bare-subshell / `$?` shape is load-bearing, while the alternative
   # `( set -e; ... ) || status=$?` is wrong; examples/checks-and-coverage's
   # copy carries the full explanation, which is not repeated here so the two
   # cannot drift into disagreeing about it.
@@ -401,7 +390,8 @@ in
       '';
 
   # Absence, asserted as absence. A docs package that is merely broken, or a
-  # `checks.docs` that trivially succeeds, would both slip past a test that
+  # `checks.docs` that succeeds without exercising the docs behavior would
+  # both slip past a test that
   # only looked at the instance which HAS docs.
   #
   # Paired with positive controls in the same check, for the reason
@@ -432,7 +422,7 @@ in
     assert lib.assertMsg (!(bare ? formatter)) "a package declaring no treefmt still got a formatter";
     pkgs.runCommand "org-preset-omits-undeclared-outputs" { } "touch $out";
 
-  # `nix run .#test`, actually run -- and `apps.default` aliasing it, which is
+  # `nix run .#test`, run -- and `apps.default` aliasing it, which is
   # what the org template declares.
   checks.org-preset-generated-test-app =
     assert lib.assertMsg (
@@ -523,8 +513,7 @@ in
     pkgs.runCommand "org-preset-name-collisions-rejected" { } "touch $out";
 
   # The version reaches every derivation that carries one, from the .asd and
-  # from nowhere else -- including the store path, which is the form a
-  # release is actually inspected in.
+  # from nowhere else, including the store path used for release inspection.
   checks.org-preset-version-comes-from-the-asd =
     assert lib.assertMsg (
       flake.packages.${system}.default.version == "0.5.3"
@@ -605,12 +594,12 @@ in
   # arguments and exposed only the RESULT, so a caller delivering a CLI from
   # `overrideOutputs` had to re-spell pname, version, src, meta -- and every
   # `lispDependencies` entry. Forgetting the last of those produces a binary
-  # that is simply missing a dependency, with nothing to notice it.
+  # that is missing a dependency, with no evaluation-time error.
   #
   # So the assertion is not "a binary was produced" but "the binary can USE a
   # dependency that was declared once, on the `mkPackageFlake` call". It runs
   # from a scratch directory, because a run inside the source tree could
-  # resolve `forge-preset-support` from the working directory and prove
+  # resolve `forge-preset-support` from the working directory and verify
   # nothing.
   checks.org-preset-executable-carries-dependencies =
     pkgs.runCommand "org-preset-executable-carries-dependencies" { cli = cliProgram; }
@@ -709,7 +698,7 @@ in
   # complete `lispDerivation` call, so a caller whose delivery the
   # `executable` argument cannot express still spells the package's identity
   # exactly once. Nothing is overridden here -- if `ctx.lispDerivationArgs`
-  # lost an entry, this would stop building rather than quietly deliver
+  # lost an entry, this would stop building rather than deliver
   # something different.
   #
   # D-3 rides along: the delivered store path carries the version from the
@@ -866,11 +855,11 @@ in
   #     marker in the runner's output so a suite that merely FOUND the system
   #     without loading its code would still fail;
   #   * the probe in the pre-fix shell -- `forge-preset-support` still there
-  #     (so the shell is not simply broken), `forge-preset-harness` gone. That
+  #     (so the shell itself remains usable), `forge-preset-harness` gone. That
   #     is the whole discrimination, in two lines of one file;
   #   * run-tests.lisp in the pre-fix shell -- red, naming the missing system.
-  #     Without it, "the registry differs" would be proved but "the documented
-  #     workflow was broken" would only be asserted.
+  #     Without it, the check would distinguish registry state but not the
+  #     documented workflow.
   checks.org-preset-devshell-loads-check-only-dependency =
     pkgs.runCommand "org-preset-devshell-loads-check-only-dependency"
       {
@@ -915,7 +904,7 @@ in
 
         # `set +e` around a bare invocation, never `( set -e; ... ) || status=$?`:
         # examples/checks-and-coverage carries the full explanation of why the
-        # obvious shape is wrong, and it is not repeated here so the two
+        # alternative is wrong, and it is not repeated here so the two
         # cannot drift into disagreeing about it.
         set +e
         runInDevShell "$preFixHook" sbcl --script run-tests.lisp > pre-fix-suite 2>&1

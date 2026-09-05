@@ -46,8 +46,8 @@ different delivery shapes."
     ;; UIOP caches the temporary directory, so an image carries the builder's
     ;; TMPDIR until this re-reads the environment.
     (uiop:setup-temporary-directory)
-    ;; Proof that `lispDependencies` reached the DELIVERY and not just the
-    ;; library: this call is compiled into the image, so a binary built from
+    ;; `lispDependencies` must reach the DELIVERY, not only the library: this
+    ;; call is compiled into the image, so a binary built from
     ;; arguments that omitted the dependency could not have been built at all.
     (format t "~&support=~A~%" (forge-preset-support:support-marker))
     (format t "~&preset=~A~%" (forge-preset:describe-preset "images"))

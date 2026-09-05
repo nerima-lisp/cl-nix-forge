@@ -63,7 +63,7 @@ and a `mkScriptCheck` over the same system distinguishable in a build log.
 
 An enclosing `test-op` is not neutral. `cl-weave` is its own test subject,
 and its suite contains a test that performs `test-op` on `cl-weave/test`
-directly, in order to assert the ASDF integration's failure path. Driving
+directly to assert the ASDF integration's failure path. Driving
 that suite from an enclosing `test-op` puts the same operation on the plan
 twice and ASDF rejects it as a circular dependency. Such a system is
 untestable through `asdf:test-system` by construction, not by oversight.
@@ -216,7 +216,7 @@ it, so it doubles as `checks.coverage` with no wrapper derivation.
 
 ### No minimum-coverage threshold
 
-There is deliberately no threshold option, for two reasons.
+There is no threshold option, for two reasons.
 
 `cl-prolog-kit` made this call explicitly: the report exists to make the number
 visible and trending, not to block merges on a threshold nobody has agreed

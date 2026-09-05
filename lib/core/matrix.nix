@@ -56,7 +56,7 @@
   #      built and still runs, so the day the underlying bug is fixed the
   #      log says so. It only stops a known failure from failing the build.
   #
-  # Note what (2) deliberately does NOT cover: a package that is available
+  # Note what (2) does not cover: a package that is available
   # here but broken, unfree or insecure still throws, loudly, exactly as it
   # would anywhere else in nixpkgs. Swallowing those would turn a packaging
   # problem into a silently missing check, which is the failure mode this
@@ -116,14 +116,13 @@
             # passing shows up in the log -- but a failure doesn't fail
             # `nix flake check`.
             #
-            # Getting "tolerate a failure" right in a build phase is fiddlier
-            # than it looks, and the obvious spelling is wrong twice over.
+            # Getting "tolerate a failure" right in a build phase requires
+            # avoiding two forms that do not preserve the invocation status.
             # `${old.checkPhase} || echo ...` binds the `||` to the phase's
             # LAST command (`runHook postCheck`), not to the Lisp invocation
             # in the middle, so errexit still aborts the phase at the
-            # invocation and the tolerance never applies -- which is what
-            # this code did until an example finally pointed it at a suite
-            # that genuinely fails. And `if ( set -e; ... )` does not fix it
+            # invocation and the tolerance never applies. `if ( set -e; ... )`
+            # does not fix it
             # either: bash ignores `-e` inside an `if` condition "even if -e
             # is set", so the phase would run past the failure to postCheck
             # and report zero. A plain subshell with errexit merely OFF in

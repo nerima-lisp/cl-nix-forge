@@ -6,7 +6,7 @@
 
 (asdf:defsystem "forge-demo/test"
   :version "0.3.1"
-  :description "Test system, deliberately kept under t/"
+  :description "Test system kept under t/"
   :depends-on ("forge-demo")
   :pathname "t/"
   :components ((:file "forge-demo-test"))

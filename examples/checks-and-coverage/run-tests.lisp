@@ -18,7 +18,7 @@
    `(:source-registry (:directory ,root) :inherit-configuration))
 
   ;; Load and run, never asdf:test-system -- forge-checks.asd defines a
-  ;; test-op that errors on purpose. `uiop:symbol-call` because this whole
+  ;; test-op that errors. `uiop:symbol-call` because this whole
   ;; `let` is one top-level form: the :forge-checks/test package does not
   ;; exist yet when the form is READ.
   (asdf:load-system "forge-checks/test")

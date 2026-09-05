@@ -42,7 +42,7 @@
 
       # Each entry contributes `packages`/`checks`/`devShells`. Almost all of
       # them are examples, which double as this library's test suite; `docs`
-      # is not an example but has the same shape deliberately, so this
+      # is not an example but has the same shape, so this
       # repository's own documentation site is built by this repository's own
       # `mkDocsSite` and is gated by the same duplicate-name guard.
       contributorsFor =
@@ -152,7 +152,7 @@
           # examples double as it: `examples/*/default.nix` drive `mkPackage`,
           # `mkTestCheck`, `mkCoverageReport`, `mkPackageFlake` and the org
           # preset against real ASDF trees, several of them by asserting that a
-          # deliberately broken input *fails*. `version-extractor-contract`
+          # broken input *fails*. `version-extractor-contract`
           # covers the one piece of pure evaluation no example can reach, since
           # `fromAsdSystem` parses a string and never builds anything.
           # `api-index-contract` covers the other: whether the API index still
@@ -179,7 +179,7 @@
           # tests pass". `nix build .#checks.<system>.default` fails if any one
           # of them fails.
           #
-          # `formatting` is deliberately not a member. treefmt over the whole
+          # `formatting` is not a member. treefmt over the whole
           # tree is not a statement about whether the library works, which is
           # why `mkPackageFlake` also keeps it as a sibling of `default` rather
           # than a component.

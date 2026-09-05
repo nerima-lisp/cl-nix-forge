@@ -1,6 +1,6 @@
 { lib, pkgs }:
 {
-  # A generic mkdocs-material site builder. Deliberately doesn't guess at
+  # A generic mkdocs-material site builder. It does not infer
   # any one project's fileset shape: pass `fileset` (built with
   # `lib.fileset.unions`/etc., same as any other Nix project) when the docs
   # need something outside `root` -- a repo whose config is at

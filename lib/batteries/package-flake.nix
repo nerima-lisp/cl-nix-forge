@@ -11,7 +11,7 @@
 let
   # The flake output kinds this preset generates per declared system, and
   # therefore the only kinds `extraOutputs`/`overrideOutputs` may name.
-  # `formatter` and `overlays` are deliberately absent: `formatter` is a
+  # `formatter` and `overlays` are absent: `formatter` is a
   # single value per system (there is nothing to merge into) and `overlays`
   # is not per-system at all, so both are configured by argument (`treefmt`,
   # `overlayPackages`) rather than by the escape hatch. Naming one of them in
@@ -126,7 +126,7 @@ let
   # by it -- which of the two happens would otherwise depend on `//` order,
   # i.e. on nothing the caller can see). `overrideOutputs` says "this name
   # already exists": naming something that was never generated is an error,
-  # so a typo in an override is a build failure rather than a quietly
+  # so a typo in an override is a build failure rather than an
   # inert extra output that nobody notices until the thing it was meant to
   # replace ships unmodified. This mirrors flake.nix's own treatment of
   # duplicate example outputs.
@@ -170,48 +170,12 @@ let
     value;
 in
 {
-  # Everything a nerima-lisp package's flake.nix declares, as one call.
+  # Build the standard package, documentation, check, app, devShell,
+  # formatter, and overlay outputs from one argument set. Additional outputs
+  # are supplied through `extraOutputs` and `overrideOutputs`.
   #
-  # PACKAGE_STANDARD.md distributes the org standard as a *template* --
-  # templates/flake.nix, copied by hand into 21 repositories. The result is
-  # that every repository re-derives the same `.asd` version extraction, the
-  # same `forAllSystems`, the same treefmt eval wired to both `formatter` and
-  # `checks.formatting`, the same mkdocs package plus docs check, the same
-  # run-tests.lisp check, the same `apps.test`/`apps.default` pair and the
-  # same devShell -- and drifts. cl-json-kit's copy is 199 lines, cl-prolog-kit's
-  # 357, cl-weave's 516, and cl-prolog-kit's `:version` regex has already diverged
-  # from the identical one the other two still share. This function is the
-  # standard as a function call, so the copies converge by construction.
-  #
-  # It generates exactly PACKAGE_STANDARD.md's required-output table and
-  # nothing else:
-  #
-  #   packages.<pname>   the ASDF system, via `lispDerivation`
-  #   packages.default   an alias for it -- or the delivered CLI, when
-  #                      `executable != null`
-  #   packages.docs      the mkdocs-material site (only when `docs != null`)
-  #   checks.default     run-tests.lisp, via `mkScriptCheck`
-  #   checks.formatting  the treefmt gate (only when `treefmt != null`)
-  #   checks.docs        proves the --strict docs build (only when `docs != null`)
-  #   apps.test          `nix run .#test`, via `mkTestApp`
-  #   apps.default       an alias for it -- or the CLI, when `executable != null`
-  #   apps.<pname>       the CLI (only when `executable != null`)
-  #   devShells.default  via `mkDevShell`, over the CHECK-ENABLED derivation
-  #                      so `lispCheckDependencies` are on the registry
-  #   formatter          the same treefmt eval `checks.formatting` uses
-  #   overlays.default   via `mkOverlay` (unless `overlayPackages = [ ]`)
-  #
-  # Anything beyond that table is the caller's, through `extraOutputs` and
-  # `overrideOutputs` -- and every real package has something: cl-weave has
-  # ten artifact checks and a CLI binary, cl-prolog-kit a coverage package plus
-  # examples and app-test checks, cl-json-kit a benchmark devShell built with
-  # `sbcl.withPackages`.
-  #
-  # There is no flake-parts and no flake-utils here, per PACKAGE_STANDARD.md;
-  # `systems` is iterated with `lib.genAttrs`, so an output for a system the
-  # caller did not declare cannot exist. That matters more than it looks:
-  # `nix flake check --all-systems` on a flake advertising a platform no
-  # runner can build fails with a platform mismatch rather than skipping it.
+  # `systems` is the complete set of emitted systems; it is not inferred from
+  # the host running the evaluation.
   #
   # Arguments (`ctx` marks a function of the context record described below):
   #
@@ -221,7 +185,7 @@ in
   #   pname       -- the package name. Names `packages.<pname>`, the
   #                  derivation, the test runner and the docs site.
   #   asd         -- path to the `.asd`. The ONLY place a version comes from;
-  #                  there is deliberately no `version` argument.
+  #                  there is no `version` argument.
   #   systems     -- [ String ]. Declared platforms, and only those.
   #   lispSystem  -- String ? pname. The ASDF system name, when it differs.
   #   meta        -- attrs ? { }. The package's meta; also the docs site's,
@@ -235,8 +199,8 @@ in
   #   forgeFor    -- system -> this library, instantiated for that system.
   #                  Overridable so a caller (and this repo's own
   #                  `examples/`, which IS its test suite) can hand in an
-  #                  instance it already has rather than have the preset
-  #                  quietly test a second, re-imported copy.
+  #                  instance it already has rather than test a second,
+  #                  re-imported copy.
   #
   #   root        -- path ? self. What `mkLispSource` filters.
   #   sourceInclude / sourceExclude -- `mkLispSource`'s escape hatches.
@@ -274,8 +238,8 @@ in
   #                  entry, since this preset previously exposed only the
   #                  RESULT of building them and never the arguments. Two
   #                  sources of truth for the package's identity, inside the
-  #                  one function whose purpose is removing exactly that
-  #                  duplication -- and a dependency added to the
+  #                  one function which removes exactly that duplication --
+  #                  and a dependency added to the
   #                  `mkPackageFlake` call would reach the library and NOT
   #                  the binary, silently. All three repositories being
   #                  migrated deliver a CLI and would otherwise override the
@@ -343,11 +307,8 @@ in
   # migration needed the same CLI derivation in `overrideOutputs` (for
   # `packages.default`) and in `extraOutputs` (for the argv of eleven
   # checks), which are separate `ctx -> ...` functions, and defined a
-  # top-level `cliFor ctx` called from both -- relying on identical
-  # arguments producing an identical derivation. That works, and is not
-  # obvious. With `executable` set, both sites read `ctx.executable`
-  # instead, and it is the same derivation because it is literally the same
-  # value.
+  # top-level `cliFor ctx` called from both. With `executable` set, both sites
+  # read `ctx.executable`, so they use the same derivation value.
   mkPackageFlake =
     {
       self,
@@ -374,7 +335,7 @@ in
           pkgs = systemPkgs;
         },
 
-      # No default. `self` is the obvious one and it does NOT work: a flake's
+      # No default. A flake's `self` does not work here: it is an attrset with
       # `self` is an attrset carrying an `outPath`, and `lib.fileset` refuses
       # a string-like value for its root, so the failure surfaces from inside
       # `mkLispSource` as a type error naming neither `self` nor this
@@ -426,8 +387,8 @@ in
                 exclude = sourceExclude;
               };
 
-          # The context the package's own inputs are computed from. It
-          # deliberately does NOT carry `package`: these values are what
+          # The context the package's own inputs are computed from. It does
+          # not carry `package`: these values are what
           # `package` is built from, and including it would be a cycle.
           baseContext = {
             inherit
@@ -636,8 +597,8 @@ in
             # of `registryPath`; `mkScriptCheck` builds `checks.default` from
             # this same `enableCheck`, so those are already built.
             #
-            # There is deliberately no argument to turn this off. A package
-            # that genuinely wants the leaner shell -- an expensive
+            # There is no argument to turn this off. A package
+            # that wants the leaner shell -- an expensive
             # test-only dependency a REPL session does not need -- already has
             # one line that says so exactly, and says it in terms of values
             # this context already carries:
@@ -712,7 +673,7 @@ in
       formatter = lib.mapAttrs (_: entry: entry.formatter) perSystem;
     }
     // lib.optionalAttrs (overlayPackages != [ ]) {
-      # Built from any one system's instantiation on purpose: `mkOverlay`
+      # Built from any one system's instantiation: `mkOverlay`
       # resolves the system from `prev` when the overlay is APPLIED, so the
       # instance it was created from contributes nothing but `lib`. Taking
       # the head avoids forcing a second nixpkgs import that the flake would

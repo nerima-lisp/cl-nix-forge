@@ -12,8 +12,8 @@ options, and this project owes its build primitive to both.
 | | nixpkgs `lisp-modules` | `cl-nix-lite` | `cl-nix-forge` |
 |---|---|---|---|
 | One derivation per ASDF system, sharing prebuilt fasls | yes | yes | yes |
-| One repo exporting several systems that depend on each other, deduplicated | no | yes (`ancestryWalker`), but its own docs call the multi-system API "an advanced API which doesn't work... do not use this unless you are stubborn" | yes, same mechanism, promoted to a documented, supported path |
-| Lisp dependency vs. Nix build input | conflated | conflated (`buildInputs = ... ++ ancestry.deps`, flagged in-code as "clearly wrong") | separated: `lispDependencies` never touches `buildInputs` |
+| One repo exporting several systems that depend on each other, deduplicated | no | yes (`ancestryWalker`), documented as an advanced API | yes, same mechanism, promoted to a documented, supported path |
+| Lisp dependency vs. Nix build input | conflated | conflated (`buildInputs = ... ++ ancestry.deps`) | separated: `lispDependencies` never touches `buildInputs` |
 | Native library visible to a transitive (2+ hop) consumer | no | no (one hop, and only if the consumer directly depends on a package literally named `cffi`) | yes, propagated through the same dependency graph as everything else |
 | Declarative multi-Lisp-implementation test matrix | no | no (hand-maintained `meta.broken` predicate lists) | yes (`mkCheckMatrix`) |
 | `.asd` `:version` extraction | no | no ("no QuickLisp database nor .asd file introspection is done whatsoever") | yes (`fromAsdSystem`), fails loudly on an unrecognized shape |
@@ -77,21 +77,14 @@ executable's wrapper. See
 directly into the executable. On Darwin with SBCL it instead builds a plain
 `.core` via `save-lisp-and-die` and wraps `sbcl --core`.
 
-The evidence for that fallback is one observation, and the docs should not
-imply more. On aarch64-darwin with SBCL 2.6.6, a bare
-`(asdf:operate 'asdf:program-op "greeter-app")` run under `sbcl --script` had
-not completed after five minutes and had written no file at the system's
-`:build-pathname`; it was killed at that point. So: "does not finish in a
-workable time", not "provably never finishes". A hand-written
-`sb-ext:save-lisp-and-die :executable t` on the same host completed in
-seconds and produced a working binary, which is what places the fault in
-`program-op`'s delivery rather than in SBCL's dumper. No upstream bug ID is
-cited because none could be identified with confidence.
+The fallback is based on one aarch64-darwin observation. The full test
+conditions and limitation of that evidence are recorded in
+[Platform coverage](../project/platform-coverage.md).
 
 That fallback path is also the one CI does not build; see
 [Platform coverage](../project/platform-coverage.md).
 
 ## What this does not claim
 
-[Non-goals](non-goals.md) lists what `cl-nix-forge` deliberately does not do,
-and why each of those is a decision rather than a gap waiting to be filled.
+[Non-goals](non-goals.md) lists what `cl-nix-forge` does not do and the
+reason for each boundary.

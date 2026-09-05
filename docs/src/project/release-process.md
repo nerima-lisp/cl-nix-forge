@@ -31,9 +31,8 @@ documentation site carries the release number without a second place to edit.
 
 ## What keeps the file and the tag in step
 
-The obvious objection to a `VERSION` file is that a human has to remember to
-bump it. That is equally true of a `.asd` `:version`, and it is not the file
-format that makes the arrangement safe — it is the gate:
+A `VERSION` file requires a matching update when a release is cut. The same is
+true of a `.asd` `:version`; the gate below keeps the two values synchronized:
 
 ```yaml
 # .github/workflows/release.yml
@@ -51,10 +50,8 @@ failure the `.asd` rule exists to prevent.
 ## What the tag gate actually builds
 
 The release job then runs `nix flake check --print-build-logs` on the tagged
-tree. `--print-build-logs`, and no `--no-build`: the point is to *build*, not
-evaluate. A missing module argument is a lazy error that passes evaluation
-and only fails at build time, which is how six checks were once green under
-`--no-build` and red in CI.
+tree without `--no-build`. This builds the checks and catches missing module
+arguments that evaluation alone may not force.
 
 `checks.default` is the aggregate this repository's own suite hangs from —
 the same statement [`mkPackageFlake`](../reference/outputs.md#mkpackageflake)
@@ -67,9 +64,9 @@ what was gated:
 nix build .#checks.x86_64-linux.default   # fails if any single check fails
 ```
 
-`checks.formatting` is deliberately not a member. treefmt over the whole tree
-is not a statement about whether the library works, which is why
-`mkPackageFlake` also keeps it as a sibling of `default` rather than a
+`checks.formatting` is not a member. treefmt over the whole tree
+does not replace the library checks. `mkPackageFlake` keeps it as a sibling
+of `default` rather than a
 component of it.
 
 `checks.docs` is the same derivation as `packages.docs`: `mkdocs build

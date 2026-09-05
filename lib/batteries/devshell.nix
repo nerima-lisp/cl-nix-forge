@@ -19,20 +19,19 @@
   # standing in take precedence, and prepending any registry the caller had
   # already exported exactly as the build does.
   #
-  # Deliberately NOT exported: ASDF_OUTPUT_TRANSLATIONS. The build sets it
+  # Do not export ASDF_OUTPUT_TRANSLATIONS. The build sets it
   # to the identity mapping so fasls land beside their sources and the
   # output stays reusable as a registry entry; a REPL wants the opposite,
   # because fasls dropped into the working tree are precisely the artefacts
   # `mkLispSource` then has to keep back out of the store. Left unset, ASDF
   # caches under ~/.cache/common-lisp.
   #
-  # `pkgs.sbcl.withPackages` in `extraPackages` composes correctly, which
-  # was not obvious and was checked: `mkShell` puts `packages` ahead of
-  # everything from `inputsFrom` on PATH, so the wrapped Lisp wins over the
-  # plain one the derivation pulls in, and nixpkgs builds that wrapper with
-  # `--prefix CL_SOURCE_REGISTRY` (not `--set`), so its Quicklisp-style
-  # packages are prepended to the registry exported here rather than
-  # replacing it.
+  # `pkgs.sbcl.withPackages` in `extraPackages` composes correctly:
+  # `mkShell` puts `packages` ahead of everything from `inputsFrom` on PATH,
+  # so the wrapped Lisp wins over the plain one the derivation pulls in.
+  # Nixpkgs builds that wrapper with `--prefix CL_SOURCE_REGISTRY` (not
+  # `--set`), so its Quicklisp-style packages are prepended to the registry
+  # exported here rather than replacing it.
   mkDevShell =
     {
       drv,

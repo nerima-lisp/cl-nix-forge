@@ -47,13 +47,10 @@ in
   # `nix run .#test` -- the org-standard entry point that runs the repo's
   # own `run-tests.lisp` (see PACKAGE_STANDARD.md in nerima-lisp/.github).
   #
-  # This deliberately drives the script rather than `asdf:test-system`, so
-  # the plain `sbcl --script run-tests.lisp` path a contributor uses in a
-  # REPL-less shell is the same path CI exercises; `mkTestCheck` covers the
-  # `test-system` route. The script is run from the source tree in place,
-  # because a `run-tests.lisp` locates its own systems relative to
-  # `*load-truename*` -- copying it elsewhere would silently test whichever
-  # copy of the project happened to be on the registry first.
+  # Run the package script from the source tree, matching the CI and
+  # `sbcl --script run-tests.lisp` paths. `mkTestCheck` separately covers
+  # the `asdf:test-system` route; the script resolves systems relative to
+  # `*load-truename*`.
   #
   #   pname            :: String -- project name; the runner is installed
   #                        as `<pname>-test`.

@@ -5,9 +5,8 @@ lists all of them; each row links to its full entry.
 
 The **Module** column preserves the `lib/core/` versus `lib/batteries/`
 distinction that the functional grouping of these pages cuts across.
-`lib/core/` is the set of differentiators — the reason this library exists.
-`lib/batteries/` is optional convenience that a downstream flake could write
-by hand, and kept writing by hand identically, which is why it is here.
+`lib/core/` contains the core APIs. `lib/batteries/` contains optional
+convenience APIs for common downstream flake patterns.
 
 ## Building systems
 
@@ -103,11 +102,8 @@ exist is a dead anchor.
 
 The check searches for the linked form ``[`name`](`` rather than a bare
 mention, because a bare mention is exactly the state it exists to reject:
-`mkPackageFlake` was exported in v0.3.0, was referred to by name on three
-pages, and had neither a row here nor an entry anywhere until v0.4.1. That
-was written up here as an unenforced gap, and the gap promptly recurred —
-`asdSystemDependencies` was exported with no row on either count, which is
-what turned the paragraph into a check.
+The check covers both the table row and the linked reference entry, so each
+exported attribute has one discoverable API entry.
 
 The command above still answers "what is exported?" directly, which is the
 question to ask when writing the row rather than when verifying it.

@@ -46,7 +46,7 @@ functions that exist because no prior art provided them.
 
 `lib/batteries/`
 
-: Optional, clearly-secondary conveniences — version extraction, named
+: Optional conveniences — version extraction, named
 checks, coverage reports, dev shells, docs sites, flake output helpers.
 Every one of them could be written by hand in a downstream flake; they are
 here because every downstream flake was writing the same one.
@@ -75,8 +75,5 @@ one repository merge.
 ## Status
 
 The public API in `lib/` may change in a breaking way in any `0.x` release.
-It is deliberately not frozen: the library has not yet been applied to a real
-repository, and the first three adoptions (`cl-weave`, `cl-prolog-kit`,
-`cl-json-kit`) are expected to expose gaps that are better fixed than worked
-around. `1.0.0` is the release that follows those migrations, not the one
-that precedes them.
+Pin integrations to a release or commit and review migration notes before
+upgrading. The `1.0.0` release will define the stable API.

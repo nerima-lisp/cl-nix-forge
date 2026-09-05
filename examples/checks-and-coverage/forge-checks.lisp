@@ -5,7 +5,7 @@
 (in-package :forge-checks)
 
 (defun tally (numbers)
-  "Sum NUMBERS. Branches, so an sb-cover report over this file is non-trivial."
+  "Sum NUMBERS across branches so an sb-cover report includes both paths."
   (if (null numbers)
       0
       (+ (first numbers) (tally (rest numbers)))))

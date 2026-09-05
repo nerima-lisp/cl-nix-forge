@@ -17,31 +17,19 @@ in
   # built with anything else. Producing an empty report, or silently skipping,
   # would leave a green check attesting to nothing.
   #
-  # The declaim dance below is load-bearing and easy to get subtly wrong, so
-  # it lives here once instead of in every consumer's flake:
+  # Instrument the target system before compiling the test suite:
   #
   #   (declaim (optimize sb-cover:store-coverage-data))
   #   (asdf:load-system "<sys>" :force t)
   #   (declaim (optimize (sb-cover:store-coverage-data 0)))
   #
-  # Instrumentation is a COMPILE-time property: only code compiled while
-  # `store-coverage-data` is in effect records anything. `buildPhase` already
-  # compiled this system without it, so `:force t` is not a performance knob
-  # -- without it ASDF finds the existing FASLs current, loads them, and the
-  # report comes back empty. `:force t` forces this system alone and not its
-  # dependencies, so a dependency's FASLs are reused and its files stay out
-  # of the report. The second declaim restores the default before the suite
-  # is compiled, so the report measures the library, not the tests.
+  # Coverage is recorded at compile time. Force the target system to compile
+  # under sb-cover, reuse dependency FASLs, then restore the default before
+  # compiling the test suite.
   #
-  # NO MINIMUM-COVERAGE THRESHOLD, and no option to add one. Two reasons.
-  # First, cl-prolog-kit made this call deliberately: "the report exists to make
-  # the number visible and trending, not to block merges on a threshold
-  # nobody has agreed to yet". Second, sb-cover offers no supported way to
-  # implement it -- `sb-cover:report` returns the index pathname and nothing
-  # else, so a percentage gate would mean scraping SBCL's generated HTML, a
-  # coupling to a report template that has no stability guarantee. A project
-  # that wants a gate should compute the ratio in its own Lisp code (cl-weave
-  # does exactly this behind `--coverage-min-expression`) and wire it up with
+  # No coverage threshold is enforced. `sb-cover:report` returns only the
+  # report pathname, so a percentage gate would require parsing generated
+  # HTML. Projects that need a threshold can calculate it in Lisp and use
   # `mkCommandCheck`.
   #
   #   drv             :: a `lispDerivation` result built with SBCL.

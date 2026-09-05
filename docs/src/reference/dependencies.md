@@ -33,7 +33,7 @@ with `nativeLibraries = [ drv ]` — cl-nix-forge cannot detect this for a
 package it did not build.
 
 `lispImplementation` is optional *here* because `fromDerivation`
-deliberately wraps outputs containing no Lisp at all: a C shared library, a
+wraps outputs containing no Lisp at all: a C shared library, a
 data directory, some foreign flake's binary. Those have no implementation to
 name, and demanding one would only teach callers to invent an answer. Two
 properties keep the omission from being a hole. Wrapping something
@@ -55,14 +55,14 @@ lispDependencies = [
 ];
 ```
 
-Both arguments are required, and there is deliberately no bare-derivation
+Both arguments are required, and there is no bare-derivation
 shorthand — passing one is an error that says what to write instead, rather
 than the opaque "called without required argument" a destructuring pattern
 would produce. Everything this function wraps is a precompiled Lisp package
 whose fasls belong to exactly one implementation. A shorthand letting the
 caller leave that unsaid would be a one-character way to opt out of the
-boundary `lispDerivation` enforces — and that check is the whole reason a
-consumer built with a different implementation fails during evaluation
+boundary `lispDerivation` enforces. A consumer built with a different
+implementation fails during evaluation
 instead of asking ASDF to rewrite fasls inside the immutable store.
 
 It defaults to `recursive = true` and does not offer the argument: nixpkgs'

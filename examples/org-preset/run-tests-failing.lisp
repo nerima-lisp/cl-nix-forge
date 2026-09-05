@@ -1,4 +1,4 @@
-;;;; The failing counterpart of run-tests.lisp, so a check can prove that the
+;;;; The failing counterpart of run-tests.lisp, so a check can verify that the
 ;;;; preset's generated `checks.default` reports a red suite instead of
 ;;;; swallowing it. It takes the same load path as the real runner and then
 ;;;; fails an assertion, rather than exiting 1 immediately -- a check that

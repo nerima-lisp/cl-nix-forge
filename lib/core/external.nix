@@ -34,8 +34,8 @@ rec {
   #                                      rather than letting ASDF attempt to
   #                                      rewrite immutable store paths.
   #
-  # Why this argument is OPTIONAL here while `fromNixpkgsLisp` below makes
-  # it mandatory: `fromDerivation` deliberately wraps outputs that contain
+  # `implementation` is optional here while `fromNixpkgsLisp` below makes
+  # it mandatory: `fromDerivation` wraps outputs that contain
   # no Lisp at all -- a C shared library, a data directory, some foreign
   # flake's binary. Those have no implementation to name, and demanding one
   # would only teach callers to invent an answer, which is worse than an
@@ -102,12 +102,12 @@ rec {
   #     })
   #   ];
   #
-  # Both arguments are required, and there is deliberately no
-  # bare-derivation shorthand. Everything this function wraps is a
+  # Both arguments are required; there is no bare-derivation shorthand.
+  # Everything this function wraps is a
   # precompiled Lisp package, whose fasls belong to exactly one
   # implementation; a shorthand that let the caller leave that unsaid would
   # be a one-character way to opt out of the boundary lispDerivation
-  # enforces -- and that check is the whole reason a consumer built with a
+  # enforces. A consumer built with a
   # different implementation fails during evaluation instead of asking ASDF
   # to rewrite fasls inside the immutable store.
   #

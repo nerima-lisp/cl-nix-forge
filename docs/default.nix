@@ -45,7 +45,7 @@ in
 {
   packages.docs = site;
 
-  # `checks.docs` and `packages.docs` are the same derivation on purpose.
+  # `checks.docs` and `packages.docs` are the same derivation.
   # `mkdocs build --strict` turns a broken link or a page missing from the
   # nav into a build failure, and without it in `checks` the first sign of a
   # broken docs tree would be a failed deploy after the merge.

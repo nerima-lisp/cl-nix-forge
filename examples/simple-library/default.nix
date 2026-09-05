@@ -69,10 +69,8 @@ let
   # that package does not exist -- nothing is ever built from it, both entry
   # points reject it during evaluation.
   #
-  # The name is deliberately one no implementation will ever have. It used
-  # to be `ccl-1.13`, which quietly stopped testing anything the moment CCL
-  # got a row: adding a row is a routine, expected change, and this check
-  # must survive every one of them.
+  # The name is outside the implementation table, so adding a supported
+  # implementation cannot make this negative test valid by accident.
   unsupportedLisp = pkgs.runCommand "no-such-lisp-0.0" { } "mkdir -p $out/bin";
 
   unsupportedLispDerivation = cl.lispDerivation {
@@ -110,7 +108,7 @@ in
   # in the same check, because `tryEval` reports only `success`, never the
   # message: a typo in the subject expression fails exactly like the defect
   # under test, and a check that asserts nothing but `!success` would then be
-  # green while proving nothing. The control is chosen to be the narrowest
+  # green while checking nothing. The control is chosen to be the narrowest
   # fact that must hold if the subject is well formed, so a failure can only
   # be the rejection the check is named for.
   checks.greeter-ecl-rejects-sbcl-system =
@@ -130,7 +128,7 @@ in
   # The control is the stub's own package name: `unsupportedLisp` is
   # referenced by nothing but these two negatives, so without it a typo in
   # the stub itself would satisfy both `tryEval`s. Asserting the name is
-  # what `lispImplementation` defaults to proves the rejection came from the
+  # what `lispImplementation` defaults to confirms the rejection came from the
   # missing table row and not from a malformed subject.
   checks.unsupported-lisp-implementation-rejected =
     assert lib.getName unsupportedLisp == "no-such-lisp";

@@ -7,7 +7,7 @@ let
   # `asdSystemDependencies` returns attrsets whose VALUES may be unforced
   # throws -- that is how a malformed `:depends-on` stays out of
   # `fromAsdSystem`'s way. `==` on the whole attrset forces every value, so
-  # `assertFails` on a comparison is what actually exercises the poison; the
+  # `assertFails` on a comparison forces every value; the
   # bare call would succeed without ever touching it. `deepSeq` says so
   # explicitly at the sites that only care that it blows up.
   assertDependenciesFail =
@@ -80,7 +80,7 @@ in
   # Unlike `asdSystemVersions`, a system missing the option is PRESENT with an
   # empty list: a dependency-less system is a real, buildable system, whereas a
   # version-less one has no version to hand back. Both assertions are on the
-  # same fixture so the difference is pinned, not just described.
+  # same fixture so the difference is tested directly.
   dependencylessSystemIsEmptyList =
     version.asdSystemDependencies {
       asd = ./version-test-fixtures/no-depends-on.asd;
@@ -283,8 +283,8 @@ in
     asd = ./version-test-fixtures/bare-symbol-dependency.asd;
     features = noFeatures;
   };
-  # There is deliberately no assertion that omitting `features` fails.
-  # `asdSystemDependencies` destructures `{ asd, features }`, so Nix itself
+  # Omitting `features` raises an evaluator error because
+  # `asdSystemDependencies` destructures `{ asd, features }`, not a
   # raises "called without required argument" -- an evaluator error, not a
   # `throw`, which `builtins.tryEval` does not catch and no test here could
   # observe. The guarantee is in the signature rather than in this file.

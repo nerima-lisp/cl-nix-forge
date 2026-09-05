@@ -3,8 +3,8 @@
   (:export :always-wrong))
 (in-package :matrix-demo-fail)
 
-;; Loads cleanly on purpose: only `asdf:test-system` may fail, so a
-;; negative check that passes proves the CHECK phase propagated a failure
-;; rather than the build phase having fallen over first.
+;; Loads cleanly: only `asdf:test-system` may fail. The negative check
+;; must therefore show that the CHECK phase propagated the failure rather
+;; than the build phase failing first.
 (defun always-wrong ()
   :wrong)

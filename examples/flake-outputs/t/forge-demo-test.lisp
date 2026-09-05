@@ -1,4 +1,4 @@
-;;;; Lives under t/ on purpose: cl-prolog-kit's hand-written source filter needed a
+;;;; Lives under t/: cl-prolog-kit's hand-written source filter needed a
 ;;;; special clause to keep this directory, and mkLispSource must keep it with
 ;;;; no special clause at all. If the filter drops t/, every check that loads
 ;;;; forge-demo/test fails to find a system rather than failing a test.

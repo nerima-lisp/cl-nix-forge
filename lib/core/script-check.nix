@@ -12,7 +12,7 @@ in
   #
   # Why this is not just `doCheck`/`mkTestCheck`: an enclosing `test-op` is
   # not neutral. cl-weave is its own test subject, and its suite contains a
-  # test that performs `test-op` on cl-weave/test directly in order to assert
+  # test that performs `test-op` on cl-weave/test directly to assert
   # the ASDF integration's failure path -- driving that suite from an
   # enclosing `test-op` puts the same operation on the plan twice and ASDF
   # rejects it as a circular dependency. Such a system is untestable through

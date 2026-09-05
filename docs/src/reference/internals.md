@@ -97,5 +97,5 @@ cl.unionAttrsBy combine [ attrsA attrsB attrsC ]
 
 `ancestryWalker` uses it to flatten N dependency subtrees into one map
 without silently picking an arbitrary winner when two subtrees disagree about
-the same key. That "no arbitrary winner" property is the whole reason it
-exists as a named function rather than a `//` fold.
+the same key. The named function preserves this behavior instead of using a
+`//` fold.

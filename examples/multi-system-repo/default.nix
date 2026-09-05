@@ -4,7 +4,7 @@
   lib,
 }:
 let
-  # Keep core-b's build tree free of core-a.  That makes this fixture prove
+  # Keep core-b's build tree free of core-a.  That lets this fixture verify
   # that ASDF resolves core-a through the declared lispDependencies edge,
   # rather than finding it incidentally in the repository source tree.
   coreBSrc = pkgs.runCommand "core-b-source" { } ''
