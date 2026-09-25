@@ -27,10 +27,7 @@ let
   coverage = import ./batteries/coverage.nix { inherit lib pkgs; };
   docs = import ./batteries/docs.nix { inherit lib pkgs; };
   devshell = import ./batteries/devshell.nix { inherit lib pkgs; };
-  app = import ./batteries/app.nix {
-    inherit lib pkgs native;
-    inherit (asdfDerivation) invoke;
-  };
+  app = import ./batteries/app.nix { inherit lib pkgs native; };
   siblings = import ./batteries/siblings.nix { inherit lib; };
   # `lib` only: this is the one module that spans systems rather than
   # living inside one, so it obtains its own `pkgs` per declared system.

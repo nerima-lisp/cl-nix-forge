@@ -59,28 +59,38 @@ locally.
 
 ## The consequence, stated plainly
 
-`lib/batteries/app.nix` branches on `isDarwin && sbcl`. A Linux runner
-therefore only ever executes the `asdf:program-op` delivery path. The Darwin
-`save-lisp-and-die` fallback — the branch that exists precisely because
-`program-op` was observed to produce no binary on aarch64-darwin — is
-verified by nothing at all.
+`lib/batteries/app.nix`'s `mkExecutable` drives `asdf:program-op` on every
+platform now, including aarch64-darwin with SBCL — an earlier revision
+branched on `isDarwin && sbcl` and fell back to `save-lisp-and-die` plus a
+`makeWrapper` shim there, on the strength of one data point: on
+aarch64-darwin with SBCL 2.6.6, `program-op` had not produced a binary at the
+system's `:build-pathname` within five minutes, and the test was stopped at
+that point. That data point did not reproduce. Rebuilding the exact same
+`lispDerivation` invocation `mkExecutable` uses — same `CL_SOURCE_REGISTRY`
+plumbing, same `ASDF_OUTPUT_TRANSLATIONS`, a real ASDF dependency resolved
+purely by name, the same `(asdf:operate 'asdf:program-op "<system>")` script
+— against nixpkgs SBCL 2.6.8 on aarch64-darwin produced a working
+`Mach-O 64-bit executable arm64` in a few seconds, every time, already
+ad-hoc/linker-signed (`codesign -dv` reports
+`flags=0x20002(adhoc,linker-signed)`) and runnable with no further signing
+step. The apparent multi-minute stalls seen while re-investigating this
+turned out, on inspection, to be ambient `nix-daemon` contention from
+unrelated concurrent builds sharing this machine's 4 job slots (visible as
+repeated "SQLite database ... is busy" warnings), not anything `program-op`
+or ASDF did; a build run without that contention completed in seconds. This
+does not rule out a genuine regression specific to SBCL 2.6.6 that current
+SBCL no longer has, but nothing in the code path itself is Darwin-specific
+enough to explain one.
 
-That is the coverage gap. Dropping `aarch64-darwin` from the declared systems
-did not create it; it stopped the declaration from implying it was covered.
-The branch is kept because an adopter may still declare `aarch64-darwin` in
-their own `systems`, and on that platform the fallback is what makes
-`mkExecutable` produce a binary.
-
-The fallback is based on one data point: on aarch64-darwin with SBCL 2.6.6,
-`program-op` produced no binary at the system's `:build-pathname` within five
-minutes. The test was stopped at that point; this establishes an impractical
-build time, not non-termination. See [`mkExecutable`](../reference/outputs.md#mkexecutable)
-for the implementation contract.
+`aarch64-darwin` still carries no CI gate (see above), so this remains a
+developer-machine observation, not a CI-enforced guarantee. See
+[`mkExecutable`](../reference/outputs.md#mkexecutable) for the delivery
+contract.
 
 ## Closing it
 
-Building the Darwin path in CI needs a macOS runner. Until there is one, the
-honest statement is the one above.
+Building this path in CI on aarch64-darwin needs a macOS runner. Until there
+is one, the statement above is a developer-machine observation, not a gate.
 
 ## The other platform branch
 

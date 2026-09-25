@@ -187,9 +187,11 @@ in
   '';
 
   # A leading --dynamic-space-size belongs to the application, not to SBCL's
-  # runtime. On the program-op path uiop's :save-runtime-options t guarantees
-  # that; the Darwin fallback needs --end-runtime-options to match, and
-  # without it this argument is swallowed (or crashes the image outright).
+  # runtime. `program-op`'s uiop:dump-image hardcodes :save-runtime-options t
+  # whenever it dumps an executable, which guarantees that on every platform
+  # this library delivers to; a now-removed Darwin fallback needed an
+  # explicit --end-runtime-options to match, and without it this argument was
+  # swallowed (or crashed the image outright).
   checks.forge-demo-executable-argument-passthrough =
     pkgs.runCommand "forge-demo-executable-argument-passthrough" { }
       ''

@@ -13,7 +13,8 @@ about to call.
 
 ## `mkExecutable`
 
-Deliver a standalone binary via `asdf:program-op`.
+Deliver a standalone binary via `asdf:program-op` — one code path on every
+declared platform, including aarch64-darwin with SBCL.
 
 ```nix
 packages.${system}.my-cli = cl.mkExecutable {
@@ -32,7 +33,7 @@ packages.${system}.my-cli = cl.mkExecutable {
 | Argument | Default | Effect |
 |---|---|---|
 | `args` | required | The exact attrset you would pass to `lispDerivation`, **without** `lispBuildOp` — this function sets it |
-| `buildOperation` | `"asdf:operate 'asdf:program-op"` | Only used on the non-Darwin-SBCL path |
+| `buildOperation` | `"asdf:operate 'asdf:program-op"` | The ASDF operation class invoked via `asdf:operate` |
 | `programPath` | `null` | Where ASDF actually wrote the program, if not the system name |
 | `dynamicSpaceSize` | `null` | Megabytes of SBCL dynamic space |
 | `imageRequires` | `[ ]` | Implementation modules to `(require ...)` before the image is dumped |
@@ -64,7 +65,12 @@ source directory, and died with `Failed to find the TRUENAME of
 its own systems. Both sides were individually correct and disagreed silently.
 
 `$out` always contains `$out/bin/<pname>` — the entry point, and
-`meta.mainProgram`.
+`meta.mainProgram`. It is the real executable `program-op` produced, unless
+the delivery has native libraries to resolve at run time, in which case it is
+a thin `makeWrapper` shim around that executable (see
+[Dependencies and native libraries](dependencies.md#nativelibrarywrapperargs)):
+baking a search path into `DYLD_LIBRARY_PATH`/`LD_LIBRARY_PATH` has no
+representation inside the binary itself.
 
 With `installSource = true` it also contains:
 
@@ -82,18 +88,12 @@ while their dependencies' are not fail at the same place, one
 
 A delivered image may therefore assume that `share/common-lisp/source/` exists
 under the installation prefix of the file it is running out of — the parent of
-the directory holding `sb-ext:*runtime-pathname*` on the `program-op` path, and
-of the one holding `sb-ext:*core-pathname*` on the Darwin fallback — and
-nothing more. Both anchors are covered: on the Darwin fallback the
-running image is a bare `.core` inside an intermediate derivation, so a tree
-installed only into `$out` would sit somewhere that image cannot name. That
-derivation gets the real tree and `$out` gets a symlink to it, which makes the
-two views the same directory rather than two copies that can drift.
+the directory holding `sb-ext:*runtime-pathname*` — and nothing more.
 
-What is **not** promised: on the `program-op` path `$out` also holds the whole
-built tree at its root, because that is where ASDF wrote the program and the
-delivery copies the derivation wholesale. That is an artifact, not an
-interface — the Darwin fallback has no such thing.
+What is **not** promised: `$out` also holds the whole built tree at its root,
+because that is where ASDF wrote the program and the delivery copies the
+derivation wholesale. That is an artifact, not an interface —
+`share/common-lisp/source/` is the only source layout to build on.
 
 `installSource` defaults to false because it puts the source tree and its whole
 dependency closure into the delivered runtime closure, which a binary that
@@ -106,13 +106,12 @@ then normalized. If the program is missing or not executable, the build fails
 with a message naming the path it looked at, rather than installing nothing.
 
 `dynamicSpaceSize` and `imageRequires` act on the Lisp that performs the
-dump, and take effect on both delivery paths. They are spelled as SBCL
-command-line options, so requesting them for another implementation is an
-assertion failure. `imageRequires` has a preferred alternative:
-`:depends-on ((:require :sb-cover))` in the `.asd` is ASDF-native, works on
-both paths, and keeps a system's dependencies in the system definition. The
-Nix option is for the remaining case where the *dump* needs a module the
-system itself does not depend on.
+dump. They are spelled as SBCL command-line options, so requesting them for
+another implementation is an assertion failure. `imageRequires` has a
+preferred alternative: `:depends-on ((:require :sb-cover))` in the `.asd` is
+ASDF-native, works everywhere, and keeps a system's dependencies in the
+system definition. The Nix option is for the remaining case where the *dump*
+needs a module the system itself does not depend on.
 
 ### What Nix owns and what the `.asd` owns
 
@@ -127,36 +126,38 @@ options here:
 `save-runtime-options`
 
 : Not an option because it cannot be turned off. `uiop:dump-image` hardcodes
-`:save-runtime-options t` whenever it is dumping an executable, so the
-`program-op` path always saves them; on the Darwin path SBCL documents the
-flag as meaningless when `:executable` is NIL, so it is unavailable there by
-construction. The observable behaviour it buys — the image starts with the
-heap it was dumped with, and the runtime does not eat the user's arguments —
-is instead made unconditional on both paths.
+`:save-runtime-options t` whenever it is dumping an executable, so
+`program-op` always saves them. The observable behaviour it buys — the
+image starts with the heap it was dumped with, and the runtime does not eat
+the user's arguments — needs nothing further from this module.
 
 `core compression`
 
 : Not an option because it cannot be turned on for `program-op`. ASDF's
 `perform` method for an `image-op` calls `dump-image` and never passes
 `:compression`, and SBCL exposes no global to change that, so the only route
-would be monkey-patching an ASDF method at build time. The Darwin fallback
-used to hardcode `:compression t`, which meant one `mkExecutable` call
-produced a compressed, slower-starting core on Darwin and an uncompressed one
-everywhere else. It now matches `program-op` and compresses nothing.
+would be monkey-patching an ASDF method at build time.
 
-### The Darwin fallback
+### Darwin, and why no code-signing step is needed
 
-On Darwin with SBCL, `mkExecutable` builds a plain, non-executable `.core`
-via `save-lisp-and-die` and wraps `sbcl --core` with `makeWrapper`. The
-`.asd`'s own `:entry-point` is still the source of truth on that path too,
-read back through ASDF's `component-entry-point` at build time rather than
-duplicated in Nix.
+`mkExecutable` drives the same `asdf:program-op` path on aarch64-darwin as on
+every other declared platform. An earlier revision fell back to a plain,
+non-executable `.core` via `save-lisp-and-die` wrapped in `sbcl --core` with
+`makeWrapper` on Darwin with SBCL, on the strength of one observation that
+`program-op` had not produced a binary within five minutes. That observation
+did not reproduce: rebuilding the exact same `lispDerivation` invocation this
+function uses against a current nixpkgs SBCL on aarch64-darwin produced a
+working executable in seconds, every time tried; see
+[Platform coverage](../project/platform-coverage.md) for what is and is not
+verified about this now.
 
-The fallback is based on one observation; the test conditions and its limits
-are recorded in [Platform coverage](../project/platform-coverage.md).
-
-This is the branch CI never builds; see
-[Platform coverage](../project/platform-coverage.md).
+No `sigtool`/`codesign` step is needed to make the delivered binary runnable.
+`codesign -dv` on a freshly built binary reports
+`flags=0x20002(adhoc,linker-signed)`: nixpkgs' SBCL runtime is already
+ad-hoc/linker-signed the way every locally linked Mach-O binary is on modern
+macOS, and `save-lisp-and-die :executable t` (what `program-op` calls on
+SBCL) writes the delivered image by appending the dumped heap to a copy of
+that already-signed runtime, so the signature travels with it.
 
 ## `mkApp`
 

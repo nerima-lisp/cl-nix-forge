@@ -44,5 +44,5 @@ Two related omissions are documented with the functions they belong to:
 - [`mkCoverageReport`](../reference/checks.md#mkcoveragereport) has no
   minimum-coverage threshold, and no option to add one.
 - [`mkExecutable`](../reference/outputs.md#mkexecutable) exposes neither
-  `save-runtime-options` nor core compression, because neither could be
-  honoured on the `program-op` path.
+  `save-runtime-options` nor core compression, because neither can be
+  honoured on the `program-op` delivery path it drives on every platform.
