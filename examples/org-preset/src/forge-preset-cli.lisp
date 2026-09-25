@@ -24,12 +24,12 @@ yield $prefix/."
 (defun image-anchor-pathnames ()
   "The files this image is running out of, most specific first.
 
-SB-EXT:*RUNTIME-PATHNAME* is the executable itself on the `program-op` path,
-where the image is dumped with :EXECUTABLE T, and the SBCL binary on the
-Darwin fallback, where the image is a bare core started with --core;
-SB-EXT:*CORE-PATHNAME* names that core. `mkExecutable` installs sources under
-the prefix of BOTH, which is what makes one discovery work on two very
-different delivery shapes."
+SB-EXT:*RUNTIME-PATHNAME* is the executable itself on the `program-op` path
+`mkExecutable` drives on every platform, where the image is dumped with
+:EXECUTABLE T. SB-EXT:*CORE-PATHNAME* is checked too, defensively, for any
+image started with a bare `--core` outside of `mkExecutable` -- nothing in
+this library delivers one any more, but a hand-rolled `sbcl --core` launcher
+still would, and the discovery costs nothing extra by covering it."
   (remove-duplicates (remove nil (list sb-ext:*runtime-pathname*
                                        sb-ext:*core-pathname*))
                      :test #'equal))

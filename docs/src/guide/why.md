@@ -17,7 +17,7 @@ options, and this project owes its build primitive to both.
 | Native library visible to a transitive (2+ hop) consumer | no | no (one hop, and only if the consumer directly depends on a package literally named `cffi`) | yes, propagated through the same dependency graph as everything else |
 | Declarative multi-Lisp-implementation test matrix | no | no (hand-maintained `meta.broken` predicate lists) | yes (`mkCheckMatrix`) |
 | `.asd` `:version` extraction | no | no ("no QuickLisp database nor .asd file introspection is done whatsoever") | yes (`fromAsdSystem`), fails loudly on an unrecognized shape |
-| Cross-platform `program-op` executable delivery | — | — | yes — falls back to `save-lisp-and-die` on Darwin with SBCL, where `program-op` was observed to produce no binary (see below) |
+| Cross-platform `program-op` executable delivery | — | — | yes — the same `asdf:program-op` path on every declared platform, including aarch64-darwin with SBCL (see below) |
 | Consume a nixpkgs or foreign-flake package as a dependency | — | — | yes (`fromDerivation`/`fromNixpkgsLisp`) |
 
 `lib/core/*.nix` carries the implementation and the reasoning behind each of
@@ -74,15 +74,15 @@ executable's wrapper. See
 ### Darwin executable delivery
 
 `mkExecutable` drives `asdf:program-op`, which on SBCL embeds the Lisp image
-directly into the executable. On Darwin with SBCL it instead builds a plain
-`.core` via `save-lisp-and-die` and wraps `sbcl --core`.
-
-The fallback is based on one aarch64-darwin observation. The full test
-conditions and limitation of that evidence are recorded in
-[Platform coverage](../project/platform-coverage.md).
-
-That fallback path is also the one CI does not build; see
-[Platform coverage](../project/platform-coverage.md).
+directly into the executable — the same path on aarch64-darwin as on Linux.
+An earlier revision fell back to a plain `.core` via `save-lisp-and-die`
+wrapped in `sbcl --core` on Darwin with SBCL, on the strength of one
+observation that `program-op` had not produced a binary within five minutes.
+That observation did not reproduce: rebuilt in isolation against a current
+nixpkgs SBCL, the same invocation this module uses completed in seconds and
+produced a working, already ad-hoc-signed Mach-O executable. See
+[Platform coverage](../project/platform-coverage.md) for what is and is not
+verified about this on aarch64-darwin.
 
 ## What this does not claim
 

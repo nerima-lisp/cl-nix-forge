@@ -619,20 +619,22 @@ in
       '';
 
   # D-2. A delivered image could not find the sources shipped with it,
-  # because nothing shipped any: `mkExecutable` published `$out/bin` and, on
-  # the Darwin fallback, a core in an intermediate derivation no consumer
-  # could name. The image's own discovery therefore fell through to the
-  # build-time source directory and the binary died on the first system it
-  # re-loaded.
+  # because nothing shipped any: `mkExecutable` published `$out/bin` and
+  # nothing else (an earlier revision also had a Darwin-only fallback whose
+  # image was a bare core in an intermediate derivation no consumer could
+  # name; `mkExecutable` no longer has that path, but the discovery code in
+  # forge-preset-cli.lisp still checks both anchors defensively). The image's
+  # own discovery therefore fell through to the build-time source directory
+  # and the binary died on the first system it re-loaded.
   #
   # Three things are asserted, and all three are needed. The LAYOUT, because
   # that is the written contract. The RUN, from a directory that is not the
   # source tree, because the layout existing does not mean the image can
-  # anchor on it -- and on a Darwin host the image is a bare `.core`, i.e.
-  # the delivery path where `$out` is not what the image sees at all. And the
-  # NEGATIVE control: the same binary delivered without `installSource` must
-  # fail, or the run above would pass against any image that found sources
-  # some other way.
+  # anchor on it -- the build sandbox's own source directory is gone by the
+  # time this runs, so a discovery that silently fell back to it would fail
+  # here, not merely resolve to the wrong tree. And the NEGATIVE control: the
+  # same binary delivered without `installSource` must fail, or the run above
+  # would pass against any image that found sources some other way.
   checks.org-preset-executable-installs-its-own-sources =
     pkgs.runCommand "org-preset-executable-installs-its-own-sources"
       {
