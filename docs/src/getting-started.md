@@ -5,7 +5,7 @@
 ```nix
 {
   inputs.cl-nix-forge = {
-    url = "github:nerima-lisp/cl-nix-forge/v0.6.0";
+    url = "github:nerima-lisp/cl-nix-forge/v0.6.1";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 }

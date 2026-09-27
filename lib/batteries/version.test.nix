@@ -308,4 +308,59 @@ in
     asd = ./version-test-fixtures/malformed-depends-on.asd;
     features = noFeatures;
   };
+
+  # -- file size: no walk may cost an evaluator frame per character ---------
+  # The lexer once recursed per character, so any .asd past roughly 10k
+  # characters overflowed Nix's default `max-call-depth` and took every
+  # attribute of an `mkPackageFlake` flake down with it. `large-system.asd` is
+  # generated to be many times that size; `real-world-large.asd` is the
+  # aitools .asd that hit it, with its author contact replaced. Both only
+  # prove anything when evaluated WITHOUT a raised `max-call-depth`, which is
+  # how `checks.version-extractor-contract` evaluates them.
+  largeFileVersion = version.fromAsdSystem ./version-test-fixtures/large-system.asd == "4.2.0";
+  largeFileSystemVersions =
+    version.asdSystemVersions ./version-test-fixtures/large-system.asd == {
+      "large-system" = "4.2.0";
+      "large-system/test" = "4.2.0";
+    };
+  largeFileDependencies =
+    version.asdSystemDependencies {
+      asd = ./version-test-fixtures/large-system.asd;
+      features = [ "sbcl" ];
+    } == {
+      "large-system" = [
+        "cl-date-kit"
+        "cl-sbcl-only"
+        "cl-weave"
+        "cl-feature-sbcl"
+      ];
+      "large-system/test" = [ "large-system" ];
+    };
+  realWorldLargeFileVersion =
+    version.fromAsdSystem ./version-test-fixtures/real-world-large.asd == "0.1.0";
+  realWorldLargeFileDependencies =
+    version.asdSystemDependencies {
+      asd = ./version-test-fixtures/real-world-large.asd;
+      features = [ "sbcl" ];
+    } == {
+      aitools = [
+        "cl-json-kit"
+        "cl-regex-kit"
+        "cl-codec-kit"
+        "cl-host-kit"
+        "cl-boundary-kit"
+        "cl-concurrent-kit"
+        "cl-process-kit"
+        "cl-vcs-kit"
+      ];
+      "aitools/cli" = [
+        "aitools"
+        "cl-cli"
+      ];
+      "aitools/test" = [
+        "aitools"
+        "aitools/cli"
+        "cl-weave"
+      ];
+    };
 }
