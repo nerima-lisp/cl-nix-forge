@@ -37,133 +37,274 @@ let
   # accepting commented-out metadata. A .asd is arbitrary Lisp; the moment we would
   # have to evaluate it to know the answer, the right response is to fail and
   # make the caller pass `version` explicitly.
+  #
+  # Every walk over the file -- the lexer, the defsystem scan, and the element
+  # loops of a `:depends-on` list or a feature connective -- is a
+  # `builtins.genericClosure` rather than a recursive function. Nix does not
+  # eliminate tail calls, so recursion costs one evaluator frame per character
+  # or token, and a .asd of a few tens of kilobytes exceeded the default
+  # `max-call-depth` of 10000. genericClosure iterates over a work list, and it
+  # forces each item's `key` before producing the next item, so every `key`
+  # below `seq`s the state the next step reads: without that, the unforced
+  # state would be a thunk chain as long as the file, and forcing it at the
+  # end would recurse just as deeply. Only structure is forced that way,
+  # never a feature test or a dependency name, which keeps the deferred-throw
+  # contract above.
   defsystemForms =
     caller: asdFile: features:
     let
       fail = mkFail caller asdFile;
+
+      # The lexer steps over units, not characters: every character it treats
+      # specially is a unit on its own and each run of other characters is one
+      # unit. In every lexer mode a run behaves exactly as its characters taken
+      # one at a time (appended to an atom or string, or skipped inside a
+      # comment; after a `\` escape only its first character is escaped, and
+      # the rest are appended regardless), so the result is the same while a
+      # step covers a whole word.
+      units = builtins.filter (unit: unit != "") (
+        map (part: if builtins.isList part then builtins.head part else part) (
+          builtins.split "([ \t\r\n\"\\\\;#|()])" (builtins.readFile asdFile)
+        )
+      );
+      unitCount = builtins.length units;
+      unitAt = index: builtins.elemAt units index;
       isWhitespace =
-        char:
-        builtins.elem char [
+        unit:
+        builtins.elem unit [
           " "
           "\t"
           "\n"
           "\r"
         ];
-      startsWith =
-        prefix: chars:
-        builtins.length chars >= builtins.length prefix
-        && lib.take (builtins.length prefix) chars == prefix;
-      skipLineComment =
-        chars:
-        if chars == [ ] then
-          [ ]
-        else if builtins.head chars == "\n" then
-          builtins.tail chars
-        else
-          skipLineComment (builtins.tail chars);
-      skipBlockComment =
-        chars: depth:
-        if chars == [ ] then
-          fail "unterminated block comment"
-        else if startsWith [ "#" "|" ] chars then
-          skipBlockComment (lib.drop 2 chars) (depth + 1)
-        else if startsWith [ "|" "#" ] chars then
-          if depth == 1 then lib.drop 2 chars else skipBlockComment (lib.drop 2 chars) (depth - 1)
-        else
-          skipBlockComment (builtins.tail chars) depth;
-      readString =
-        chars: value: escaped:
-        if chars == [ ] then
-          fail "unterminated string literal"
-        else
-          let
-            char = builtins.head chars;
-            rest = builtins.tail chars;
-          in
-          if char == "\"" then
-            {
-              token = {
-                type = "string";
-                value = builtins.concatStringsSep "" value;
-                inherit escaped;
-              };
-              inherit rest;
-            }
-          else if char == "\\" then
-            if rest == [ ] then
-              fail "unterminated string escape"
+      isPairAt =
+        index: first: second:
+        unitAt index == first && index + 1 < unitCount && unitAt (index + 1) == second;
+
+      # One lexer step: the state after the unit at `state.key`. `mode` is
+      # `normal`, `atom`, `string`, `line` (a `;` comment) or `block` (a
+      # `#| |#` comment, nesting to `depth`); `text` is the atom or string
+      # read so far. `emit` holds the tokens this step completed and `ends`
+      # the `(`-index to past-`)`-index pairs it closed, which `opens`, the
+      # stack of unmatched `(` token indices, exists to compute. `width` is 2
+      # when the step consumed a two-unit `#|`, `|#` or `\` escape.
+      lexStep =
+        state:
+        let
+          index = state.key;
+          unit = unitAt index;
+          # A unit read in normal mode, either directly or right after it
+          # ended the atom in `pending`.
+          normal =
+            pending:
+            let
+              tokenIndex = state.count + builtins.length pending;
+            in
+            if isWhitespace unit then
+              { emit = pending; }
+            else if unit == ";" then
+              {
+                mode = "line";
+                emit = pending;
+              }
+            else if isPairAt index "#" "|" then
+              {
+                mode = "block";
+                depth = 1;
+                width = 2;
+                emit = pending;
+              }
+            else if unit == "(" then
+              {
+                emit = pending ++ [ { type = "open"; } ];
+                opens = state.opens ++ [ tokenIndex ];
+              }
+            else if unit == ")" then
+              {
+                emit = pending ++ [ { type = "close"; } ];
+              }
+              // lib.optionalAttrs (state.opens != [ ]) {
+                opens = lib.init state.opens;
+                ends = [
+                  {
+                    name = toString (lib.last state.opens);
+                    value = tokenIndex + 1;
+                  }
+                ];
+              }
+            else if unit == "\"" then
+              {
+                mode = "string";
+                text = "";
+                escaped = false;
+                emit = pending;
+              }
             else
-              readString (builtins.tail rest) (value ++ [ (builtins.head rest) ]) true
-          else
-            readString rest (value ++ [ char ]) escaped;
-      # `#` is not an atom terminator, so `#:cl-prolog-kit` and `:cl-prolog-kit` each
-      # come back as ONE atom; `systemNameAt` relies on that to strip the
-      # designator prefix textually instead of re-lexing.
-      readAtom =
-        chars: value:
-        if chars == [ ] then
-          {
-            token = {
-              type = "atom";
-              value = builtins.concatStringsSep "" value;
-            };
-            rest = [ ];
-          }
-        else
-          let
-            char = builtins.head chars;
-          in
-          if
-            isWhitespace char
-            || builtins.elem char [
-              "("
-              ")"
-              ";"
-              "\""
-            ]
-            || startsWith [ "#" "|" ] chars
-          then
-            {
-              token = {
-                type = "atom";
-                value = builtins.concatStringsSep "" value;
+              # `#` is not an atom terminator, so `#:cl-prolog-kit` and
+              # `:cl-prolog-kit` each come back as ONE atom; `systemNameAt`
+              # relies on that to strip the designator prefix textually
+              # instead of re-lexing.
+              {
+                mode = "atom";
+                text = unit;
+                emit = pending;
               };
-              rest = chars;
+          changes =
+            if state.mode == "normal" then
+              normal [ ]
+            else if state.mode == "atom" then
+              if
+                isWhitespace unit
+                || builtins.elem unit [
+                  "("
+                  ")"
+                  ";"
+                  "\""
+                ]
+                || isPairAt index "#" "|"
+              then
+                {
+                  mode = "normal";
+                }
+                // normal [
+                  {
+                    type = "atom";
+                    value = state.text;
+                  }
+                ]
+              else
+                { text = state.text + unit; }
+            else if state.mode == "string" then
+              if unit == "\"" then
+                {
+                  mode = "normal";
+                  emit = [
+                    {
+                      type = "string";
+                      value = state.text;
+                      inherit (state) escaped;
+                    }
+                  ];
+                }
+              else if unit == "\\" then
+                if index + 1 >= unitCount then
+                  fail "unterminated string escape"
+                else
+                  {
+                    text = state.text + unitAt (index + 1);
+                    escaped = true;
+                    width = 2;
+                  }
+              else
+                { text = state.text + unit; }
+            else if state.mode == "line" then
+              lib.optionalAttrs (unit == "\n") { mode = "normal"; }
+            else if isPairAt index "#" "|" then
+              {
+                depth = state.depth + 1;
+                width = 2;
+              }
+            else if isPairAt index "|" "#" then
+              {
+                width = 2;
+              }
+              // (if state.depth == 1 then { mode = "normal"; } else { depth = state.depth - 1; })
+            else
+              { };
+          next =
+            state
+            // {
+              emit = [ ];
+              ends = [ ];
+              width = 1;
             }
+            // changes;
+          count = state.count + builtins.length next.emit;
+        in
+        next
+        // {
+          inherit count;
+          key = builtins.deepSeq [
+            next.mode
+            next.depth
+            next.text
+            next.escaped
+            count
+            next.opens
+          ] (index + next.width);
+        };
+      lexStates = builtins.genericClosure {
+        startSet = [
+          {
+            key = 0;
+            mode = "normal";
+            depth = 0;
+            text = "";
+            escaped = false;
+            count = 0;
+            opens = [ ];
+            emit = [ ];
+            ends = [ ];
+          }
+        ];
+        operator = state: if state.key >= unitCount then [ ] else [ (lexStep state) ];
+      };
+      finalLexState = lib.last lexStates;
+      tokens =
+        builtins.concatMap (state: state.emit) lexStates
+        ++ (
+          if finalLexState.mode == "atom" then
+            [
+              {
+                type = "atom";
+                value = finalLexState.text;
+              }
+            ]
+          else if finalLexState.mode == "string" then
+            fail "unterminated string literal"
+          else if finalLexState.mode == "block" then
+            fail "unterminated block comment"
           else
-            readAtom (builtins.tail chars) (value ++ [ char ]);
-      lex =
-        chars: tokens:
-        if chars == [ ] then
-          tokens
-        else
-          let
-            char = builtins.head chars;
-            rest = builtins.tail chars;
-          in
-          if isWhitespace char then
-            lex rest tokens
-          else if char == ";" then
-            lex (skipLineComment rest) tokens
-          else if startsWith [ "#" "|" ] chars then
-            lex (skipBlockComment (lib.drop 2 chars) 1) tokens
-          else if char == "(" then
-            lex rest (tokens ++ [ { type = "open"; } ])
-          else if char == ")" then
-            lex rest (tokens ++ [ { type = "close"; } ])
-          else if char == "\"" then
-            let
-              string = readString rest [ ] false;
-            in
-            lex string.rest (tokens ++ [ string.token ])
-          else
-            let
-              atom = readAtom chars [ ];
-            in
-            lex atom.rest (tokens ++ [ atom.token ]);
-      tokens = lex (lib.stringToCharacters (builtins.readFile asdFile)) [ ];
+            [ ]
+        );
       tokenCount = builtins.length tokens;
       tokenAt = index: builtins.elemAt tokens index;
+      listEnds = builtins.listToAttrs (builtins.concatMap (state: state.ends) lexStates);
+
+      # The elements of the list whose first element is at `index`, each read
+      # by `readAt` (which returns a record with a structural `next`), as
+      # `{ elements, end }`: `end` is the index of the closing `)`, or
+      # `tokenCount` for a truncated file. `next` always advances, so no key
+      # repeats and the closure visits every element.
+      listElementsFrom =
+        index: readAt:
+        let
+          isEnd = index: index >= tokenCount || (tokenAt index).type == "close";
+          items = builtins.genericClosure {
+            startSet = [
+              {
+                key = index;
+                element = readAt index;
+              }
+            ];
+            operator =
+              item:
+              if isEnd item.key then
+                [ ]
+              else
+                [
+                  {
+                    key = item.element.next;
+                    element = readAt item.element.next;
+                  }
+                ];
+          };
+        in
+        {
+          # The last item is the end itself, never an element.
+          elements = map (item: item.element) (lib.init items);
+          end = (lib.last items).key;
+        };
 
       # The three spellings that actually occur in the wild: bare (the form used
       # inside `(in-package #:asdf-user)`, which is what ASDF's own template
@@ -237,20 +378,9 @@ let
       # Used to step over a `(:version ...)` / `(:require ...)` element whole,
       # so the element loop lands on the next sibling rather than descending
       # into a sublist whose contents it would misread as dependencies.
-      endOfListAt =
-        index: depth:
-        if index >= tokenCount then
-          index
-        else
-          let
-            token = tokenAt index;
-          in
-          if token.type == "open" then
-            endOfListAt (index + 1) (depth + 1)
-          else if token.type == "close" then
-            (if depth == 1 then index + 1 else endOfListAt (index + 1) (depth - 1))
-          else
-            endOfListAt (index + 1) depth;
+      # `index` must be a `(`; an unclosed list ends at `tokenCount`. The lexer
+      # matched every paren already, so this is a lookup, not a walk.
+      endOfListAt = index: listEnds.${toString index} or tokenCount;
 
       # Evaluate the feature expression that starts at `index` against
       # `features`, returning `{ value, next }`.
@@ -288,8 +418,13 @@ let
                 null;
             # Arguments are evaluated lazily and only by the connective that
             # wants them, so `(or sbcl <nonsense>)` still answers on SBCL.
-            arguments = featureArgumentsAt (index + 2) [ ];
-            listEnd = endOfListAt index 0;
+            # Every branch of `featureExpressionAt` advances past at least one
+            # token unless it is looking at the closing `)`, which
+            # `listElementsFrom` tests first, so this terminates on any input.
+            arguments =
+              map (element: element.value)
+                (listElementsFrom (index + 2) featureExpressionAt).elements;
+            listEnd = endOfListAt index;
           in
           # `(and)` is TRUE and `(or)` is FALSE with no arguments (CLHS
           # 24.1.2.1). That is not a corner case worth skipping: `#-(and)` is
@@ -331,20 +466,6 @@ let
             value = fail "feature expression ${describeToken index} is neither a feature name nor an `(and ...)` / `(or ...)` / `(not ...)` list";
             next = index + 1;
           };
-
-      # The argument expressions of a connective, up to the closing `)`.
-      # Every branch of `featureExpressionAt` advances past at least one token
-      # unless it is looking at that `)` -- which is tested first here -- so
-      # this terminates on any input.
-      featureArgumentsAt =
-        index: values:
-        if index >= tokenCount || (tokenAt index).type == "close" then
-          values
-        else
-          let
-            argument = featureExpressionAt index;
-          in
-          featureArgumentsAt argument.next (values ++ [ argument.value ]);
 
       # A dependency designator, normalised by the same rule as the system
       # name so `asdSystemDependencies`'s values and `asdSystemVersions`'s keys
@@ -444,7 +565,7 @@ let
                 lib.toLower (tokenAt (index + 1)).value
               else
                 null;
-            next = endOfListAt index 0;
+            next = endOfListAt index;
             # The index of this element's own `)`; `endOfListAt` returns the
             # token after it.
             closeIndex = next - 1;
@@ -509,142 +630,150 @@ let
       dependencyListAt =
         index:
         let
-          step =
-            index: names:
-            if index >= tokenCount then
-              # A truncated file. Report what was read rather than complaining
-              # about paren balance -- the same stance `scan` takes at end of
-              # input, and for the same reason: that is the Lisp reader's job.
-              {
-                inherit names;
-                next = index;
-              }
-            else if (tokenAt index).type == "close" then
-              {
-                inherit names;
-                next = index + 1;
-              }
-            else
-              let
-                element = dependencyElementAt index;
-              in
-              # `names ++ element.names` is never forced here, which is what
-              # lets a single unreadable element poison this list's value
-              # while the walk itself completes and `fromAsdSystem` sails past.
-              step element.next (names ++ element.names);
+          list = listElementsFrom (index + 1) dependencyElementAt;
         in
-        step (index + 1) [ ];
+        {
+          # Never forced by the walk, which is what lets a single unreadable
+          # element poison this list's value while the walk itself completes
+          # and `fromAsdSystem` sails past.
+          names = builtins.concatMap (element: element.names) list.elements;
+          # A truncated file ends at `tokenCount`. Report what was read rather
+          # than complaining about paren balance -- the same stance `scan`
+          # takes at end of input, and for the same reason: that is the Lisp
+          # reader's job.
+          next = if list.end >= tokenCount then list.end else list.end + 1;
+        };
 
       # `open` is the stack of defsystem forms whose closing paren has not been
       # seen yet, each tagged with the paren depth of its OWN option plist. That
       # tag is the whole point: a `:version` inside a `:components` entry sits
       # one level deeper and is therefore never attributed to the system.
+      #
+      # `scan` handles the token at `index` and returns the state for the next
+      # one, built by `continue`. Its `key` forces `depth`, both lists and each
+      # form's record, but no form's `system`, `versions` or `dependencies`,
+      # which stay as lazy as the deferred-throw design needs.
+      continue = index: depth: open: closed: {
+        key = builtins.deepSeq [
+          depth
+          (map builtins.isAttrs open)
+          (map builtins.isAttrs closed)
+        ] index;
+        inherit depth open closed;
+      };
       scan =
         index: depth: open: closed:
-        if index == tokenCount then
-          # A truncated file leaves forms open. Report the available context rather
-          # than validating paren balance -- that is the Lisp reader's job, and
-          # a half-written .asd will fail loudly at build time anyway.
-          closed ++ open
-        else
-          let
-            token = tokenAt index;
-          in
-          if token.type == "open" then
-            scan (index + 1) (depth + 1) (
-              if isDefsystemAt index then
-                # index is `(`, index + 1 the operator, so index + 2 is the name.
-                open
-                ++ [
-                  {
-                    depth = depth + 1;
-                    system = systemNameAt (index + 2);
-                    versions = [ ];
-                    dependencies = [ ];
-                  }
-                ]
-              else
-                open
-            ) closed
-          else if token.type == "close" then
-            scan (index + 1) (depth - 1) (lib.filter (form: form.depth < depth) open) (
-              closed ++ lib.filter (form: form.depth == depth) open
-            )
-          else if token.type == "atom" && lib.toLower token.value == ":version" then
-            if !(builtins.any (form: form.depth == depth) open) then
-              # A `:version` that is not a defsystem option -- a `defparameter`,
-              # a component's own version -- is not system metadata. Skip it
-              # BEFORE the literal-string checks, so unrelated code in the .asd
-              # cannot make extraction fail.
-              scan (index + 1) depth open closed
-            else if index + 1 >= tokenCount || (tokenAt (index + 1)).type != "string" then
-              fail "`:version` must be followed by a literal string"
-            else if (tokenAt (index + 1)).escaped then
-              fail "`:version` must not use string escapes"
+        let
+          token = tokenAt index;
+        in
+        if token.type == "open" then
+          continue (index + 1) (depth + 1) (
+            if isDefsystemAt index then
+              # index is `(`, index + 1 the operator, so index + 2 is the name.
+              open
+              ++ [
+                {
+                  depth = depth + 1;
+                  system = systemNameAt (index + 2);
+                  versions = [ ];
+                  dependencies = [ ];
+                }
+              ]
             else
-              scan (index + 2) depth (map (
+              open
+          ) closed
+        else if token.type == "close" then
+          continue (index + 1) (depth - 1) (lib.filter (form: form.depth < depth) open) (
+            closed ++ lib.filter (form: form.depth == depth) open
+          )
+        else if token.type == "atom" && lib.toLower token.value == ":version" then
+          if !(builtins.any (form: form.depth == depth) open) then
+            # A `:version` that is not a defsystem option -- a `defparameter`,
+            # a component's own version -- is not system metadata. Skip it
+            # BEFORE the literal-string checks, so unrelated code in the .asd
+            # cannot make extraction fail.
+            continue (index + 1) depth open closed
+          else if index + 1 >= tokenCount || (tokenAt (index + 1)).type != "string" then
+            fail "`:version` must be followed by a literal string"
+          else if (tokenAt (index + 1)).escaped then
+            fail "`:version` must not use string escapes"
+          else
+            continue (index + 2) depth (map (
+              form:
+              if form.depth == depth then
+                form // { versions = form.versions ++ [ (tokenAt (index + 1)).value ]; }
+              else
+                form
+            ) open) closed
+        else if token.type == "atom" && lib.toLower token.value == ":depends-on" then
+          let
+            # Both failures below POISON the owning form's `dependencies`
+            # with an unforced `throw` and let the walk continue, rather
+            # than failing here. `defsystemForms` is shared: `fromAsdSystem`
+            # and `asdSystemVersions` read the same forms and have no
+            # interest in dependency syntax, so a `:depends-on` this lexer
+            # cannot read must not stop them from returning a version.
+            # Laziness makes that exact -- only `asdSystemDependencies` ever
+            # forces `dependencies`, and it still fails just as loudly.
+            poison =
+              message:
+              map (
                 form:
                 if form.depth == depth then
-                  form // { versions = form.versions ++ [ (tokenAt (index + 1)).value ]; }
+                  form // { dependencies = fail "system ${builtins.toJSON form.system} ${message}"; }
                 else
                   form
-              ) open) closed
-          else if token.type == "atom" && lib.toLower token.value == ":depends-on" then
+              ) open;
+          in
+          if !(builtins.any (form: form.depth == depth) open) then
+            # Same guard, same reason as `:version` above. A `:depends-on`
+            # one level down belongs to a component and names sibling FILES
+            # within this system, not systems; attributing those to the
+            # system would invent dependencies on things like "package".
+            continue (index + 1) depth open closed
+          else if index + 1 >= tokenCount then
             let
-              # Both failures below POISON the owning form's `dependencies`
-              # with an unforced `throw` and let the walk continue, rather
-              # than failing here. `defsystemForms` is shared: `fromAsdSystem`
-              # and `asdSystemVersions` read the same forms and have no
-              # interest in dependency syntax, so a `:depends-on` this lexer
-              # cannot read must not stop them from returning a version.
-              # Laziness makes that exact -- only `asdSystemDependencies` ever
-              # forces `dependencies`, and it still fails just as loudly.
-              poison =
-                message:
-                map (
-                  form:
-                  if form.depth == depth then
-                    form // { dependencies = fail "system ${builtins.toJSON form.system} ${message}"; }
-                  else
-                    form
-                ) open;
+              poisoned = poison "ends the file with a `:depends-on` option that has no value";
             in
-            if !(builtins.any (form: form.depth == depth) open) then
-              # Same guard, same reason as `:version` above. A `:depends-on`
-              # one level down belongs to a component and names sibling FILES
-              # within this system, not systems; attributing those to the
-              # system would invent dependencies on things like "package".
-              scan (index + 1) depth open closed
-            else if index + 1 >= tokenCount then
-              scan (index + 1) depth (poison "ends the file with a `:depends-on` option that has no value") closed
-            else if
-              (tokenAt (index + 1)).type == "atom" && lib.toLower (tokenAt (index + 1)).value == "nil"
-            then
-              # `:depends-on nil` is `:depends-on ()`: NIL *is* the empty list
-              # in Common Lisp, not a stand-in for one, and ECL's own cmp.asd
-              # spells it that way. Contributing nothing is the whole of it.
-              scan (index + 2) depth open closed
-            else if (tokenAt (index + 1)).type != "open" then
-              # Quote the offending token, and say `end of file` only when
-              # that is what it is: "must be followed by a list" alone left
-              # the reader to find which of thirty options was meant.
-              scan (index + 1) depth
-                (poison "has `:depends-on` followed by ${describeToken (index + 1)}, which is neither a list nor `nil`")
-                closed
-            else
-              let
-                list = dependencyListAt (index + 1);
-              in
-              # `depth` is unchanged: `dependencyListAt` consumed a balanced
-              # list, so `list.next` sits at the same nesting level as `index`.
-              scan list.next depth (map (
-                form:
-                if form.depth == depth then form // { dependencies = form.dependencies ++ list.names; } else form
-              ) open) closed
+            continue (index + 1) depth poisoned closed
+          else if
+            (tokenAt (index + 1)).type == "atom" && lib.toLower (tokenAt (index + 1)).value == "nil"
+          then
+            # `:depends-on nil` is `:depends-on ()`: NIL *is* the empty list
+            # in Common Lisp, not a stand-in for one, and ECL's own cmp.asd
+            # spells it that way. Contributing nothing is the whole of it.
+            continue (index + 2) depth open closed
+          else if (tokenAt (index + 1)).type != "open" then
+            # Quote the offending token, and say `end of file` only when
+            # that is what it is: "must be followed by a list" alone left
+            # the reader to find which of thirty options was meant.
+            continue (index + 1) depth
+              (poison "has `:depends-on` followed by ${describeToken (index + 1)}, which is neither a list nor `nil`")
+              closed
           else
-            scan (index + 1) depth open closed;
+            let
+              list = dependencyListAt (index + 1);
+            in
+            # `depth` is unchanged: `dependencyListAt` consumed a balanced
+            # list, so `list.next` sits at the same nesting level as `index`.
+            continue list.next depth (map (
+              form:
+              if form.depth == depth then form // { dependencies = form.dependencies ++ list.names; } else form
+            ) open) closed
+        else
+          continue (index + 1) depth open closed;
+      scanStates = builtins.genericClosure {
+        startSet = [ (continue 0 0 [ ] [ ]) ];
+        operator =
+          state:
+          if state.key == tokenCount then [ ] else [ (scan state.key state.depth state.open state.closed) ];
+      };
+      scanned = lib.last scanStates;
     in
-    scan 0 0 [ ] [ ];
+    # A truncated file leaves forms open. Report the available context rather
+    # than validating paren balance -- that is the Lisp reader's job, and
+    # a half-written .asd will fail loudly at build time anyway.
+    scanned.closed ++ scanned.open;
 
   # Render `"1.0.0" (a, b), "2.0.0" (c)` -- the distinct values *and* who
   # declared each one, because fixing drift means editing a specific defsystem.
