@@ -82,7 +82,8 @@
    (loop for system in '("forge-tests/alpha" "forge-tests/beta")
          append (list "--test-system" system))))
 
-(defun run-case (name script arguments expected-marker)
+(defun run-case (name script arguments expected-marker
+                 &optional (expected-exit-code (if expected-marker 1 0)))
   (incf *contract-assertions*)
   (let ((exit-code nil)
         (combined-output "")
@@ -92,13 +93,13 @@
         (multiple-value-bind (status stdout stderr)
             (run-checker script arguments)
           (setf exit-code status
-                combined-output (concatenate 'string stdout stderr)
+                combined-output (concatenate (quote string) stdout stderr)
                 passed
                 (if expected-marker
                     (and status
-                         (eql status 1)
+                         (eql status expected-exit-code)
                          (search expected-marker combined-output))
-                    (eql status 0))))
+                    (eql status expected-exit-code))))
       (error (condition)
         (setf failure-detail (princ-to-string condition))))
     (format t "~&~A ~A~%" (if passed "PASS" "FAIL") name)
@@ -106,8 +107,8 @@
       (incf *contract-failures*)
       (format *error-output* "  expected ~A; got exit ~A~%"
               (if expected-marker
-                  (format nil "exit 1 with ~A" expected-marker)
-                  "exit 0")
+                  (format nil "exit ~D with ~A" expected-exit-code expected-marker)
+                  (format nil "exit ~D" expected-exit-code))
               exit-code)
       (when failure-detail
         (format *error-output* "  runner error: ~A~%" failure-detail))
@@ -139,14 +140,32 @@
                   "[feature-lint:internal-reference]")
 (run-feature-case "feature-lint-06-domain-infra" "violation-06"
                   "[feature-lint:domain-infra]")
-(run-feature-case "feature-lint-07-glossary-export" "violation-07"
-                  "[feature-lint:glossary-export]")
+(progn
+  (run-feature-case "feature-lint-07-glossary-export" "violation-07"
+                    "[feature-lint:glossary-export]")
+  (run-case "feature-lint-08-reader-label"
+            "lib/checks/feature-lint.lisp"
+            (feature-lint-arguments "violation-08")
+            "unsupported reader dispatch"
+            2)
+  (run-case "feature-lint-unknown-leading-option"
+            "lib/checks/feature-lint.lisp"
+            (append (quote ("--unrecognized-flag" "ignored"))
+                    (feature-lint-arguments "valid"))
+            "[feature-lint:error] unknown option"
+            2))
 (run-orphan-case "orphan-tests-multi-system-nested" "multi-system-nested" nil)
 (run-orphan-case "orphan-tests-unregistered" "unregistered-file"
                  "[orphan-tests:unregistered]")
 (run-orphan-case "orphan-tests-missing-component" "missing-component"
                  "[orphan-tests:missing-component]")
-(run-orphan-case "orphan-tests-empty" "empty" "[orphan-tests:empty]")
+(progn
+  (run-orphan-case "orphan-tests-empty" "empty" "[orphan-tests:empty]")
+  (run-case "orphan-tests-unknown-leading-option"
+            "lib/checks/orphan-tests.lisp"
+            (append (quote ("--unrecognized-flag" "ignored"))
+                    (orphan-test-arguments "multi-system-nested"))
+            "[orphan-tests:invalid] unknown option"))
 
 (format t "~&ASSERTIONS ~D~%FAILURES ~D~%"
         *contract-assertions*

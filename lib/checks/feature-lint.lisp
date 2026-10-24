@@ -107,13 +107,7 @@
     (fail-closed "~A must be a list of strings, got ~S" context value))
   value)
 
-(defun option-start (argv allowed)
-  (position-if (lambda (argument) (member argument allowed :test #'string=)) argv))
-
-(defun command-arguments (allowed)
-  (let* ((argv sb-ext:*posix-argv*)
-         (start (option-start argv allowed)))
-    (if start (subseq argv start) nil)))
+(defun command-arguments () (rest sb-ext:*posix-argv*))
 
 (defun parse-options (arguments allowed repeatable required)
   (let ((result (make-hash-table :test #'equal))
@@ -1069,7 +1063,7 @@
              (required '("--source-root" "--feature-definitions" "--glossary"
                          "--glossary-heading-prefix" "--export-surface" "--mode"
                          "--package-prefix" "--infra-suffix"))
-             (options (parse-options (command-arguments allowed) allowed repeatable required)))
+             (options (parse-options (command-arguments) allowed repeatable required)))
         (check-feature-lint options))
     (error (condition)
       (format *error-output* "[feature-lint:error] ~A~%" condition)
