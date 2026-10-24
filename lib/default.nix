@@ -60,7 +60,12 @@ in
 
   # batteries/ -- optional conveniences.
   inherit (version) fromAsdSystem asdSystemVersions asdSystemDependencies;
-  inherit (checks) mkTestCheck mkCommandCheck;
+  inherit (checks)
+    mkTestCheck
+    mkCommandCheck
+    mkFeatureLintCheck
+    mkOrphanTestCheck
+    ;
   inherit (coverage) mkCoverageReport;
   inherit (docs) mkDocsSite;
   inherit (devshell) mkDevShell;
