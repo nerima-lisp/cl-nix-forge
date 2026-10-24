@@ -1,4 +1,8 @@
 ((:symbol :keep "fixture/valid/facade" "fixture/valid/nodes"
   "fixture/valid/nodes" "MAKE-NODE")
  (:symbol :keep "fixture/valid/other-facade" "fixture/valid/other"
-  "fixture/valid/other" "MAKE-OTHER"))
+  "fixture/valid/other" "MAKE-OTHER")
+ (:symbol :keep "fixture/valid/facade" "fixture/valid/nodes"
+  "fixture/valid/nodes" "NODE")
+ (:symbol :keep "fixture/valid/other-facade" "fixture/valid/other"
+  "fixture/valid/other" "OTHER"))

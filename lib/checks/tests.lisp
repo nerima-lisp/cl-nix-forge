@@ -96,7 +96,7 @@
                 passed
                 (if expected-marker
                     (and status
-                         (/= status 0)
+                         (eql status 1)
                          (search expected-marker combined-output))
                     (eql status 0))))
       (error (condition)
@@ -106,7 +106,7 @@
       (incf *contract-failures*)
       (format *error-output* "  expected ~A; got exit ~A~%"
               (if expected-marker
-                  (format nil "nonzero exit with ~A" expected-marker)
+                  (format nil "exit 1 with ~A" expected-marker)
                   "exit 0")
               exit-code)
       (when failure-detail

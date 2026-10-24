@@ -4,5 +4,5 @@
 
 (defpackage "fixture/valid/facade"
   (:use "CL")
-  (:import-from "fixture/valid/unclaimed" "MAKE-NODE")
+  (:import-from "fixture/valid/nodes" "MAKE-NODE")
   (:export "MAKE-NODE"))
