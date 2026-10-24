@@ -171,18 +171,152 @@
                     "package-designators"
                     nil)
   (progn
-  (run-feature-case "feature-lint-glossary-api-backticks"
-                    "glossary-api-backticks"
-                    nil)
-  (run-feature-case "feature-lint-glossary-unmatched-backticks"
-                    "glossary-api-backticks"
-                    "[feature-lint:glossary-export]"
-                    "docs/glossary-unmatched.md"))
-  (run-case "feature-lint-08-reader-label"
-            "lib/checks/feature-lint.lisp"
-            (feature-lint-arguments "violation-08")
-            "unsupported reader dispatch"
-            2)
+    (run-feature-case "feature-lint-glossary-api-backticks"
+                      "glossary-api-backticks"
+                      nil)
+    (run-feature-case "feature-lint-glossary-unmatched-backticks"
+                      "glossary-api-backticks"
+                      "[feature-lint:glossary-export]"
+                      "docs/glossary-unmatched.md"))
+  (progn
+    (run-feature-case "feature-lint-08-reader-label" "violation-08" nil)
+    (run-feature-case "feature-lint-reader-standard-syntax" "reader-standard" nil)
+    (progn
+      (run-feature-case "feature-lint-reader-unknown-package" "reader-unknown-package" nil)
+      (run-case "feature-lint-reader-empty-uninterned-symbol"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-empty-uninterned")
+                "uninterned symbol requires a name"
+                2)
+      (run-case "feature-lint-reader-empty-character"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-empty-character")
+                "character literal requires a character or name after #\\"
+                2)
+      (run-case "feature-lint-reader-character-package-token"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-character-package-token")
+                "character name must not contain a package marker"
+                2)
+      (run-case "feature-lint-reader-package-single-colon"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-package-single-colon")
+                "malformed package marker pattern"
+                2)
+      (run-case "feature-lint-reader-package-double-colon"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-package-double-colon")
+                "malformed package marker pattern"
+                2)
+      (progn
+        (run-case "feature-lint-reader-self-referential-label"
+                  "lib/checks/feature-lint.lisp"
+                  (feature-lint-arguments "reader-invalid-reader-label-self-reference")
+                  "reader label reference cannot be the labeled object"
+                  2)
+        (run-case "feature-lint-reader-self-reference-after-discard"
+                  "lib/checks/feature-lint.lisp"
+                  (feature-lint-arguments "reader-invalid-reader-label-discard-self-reference")
+                  "reader label reference cannot be the labeled object"
+                  2))
+      (run-case "feature-lint-reader-conditional-malformed-package-token"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-conditional-package")
+                "malformed package marker pattern"
+                2))
+    (run-case "feature-lint-reader-unreadable-object"
+              "lib/checks/feature-lint.lisp"
+              (feature-lint-arguments "reader-invalid-unreadable")
+              "unreadable reader syntax #<"
+              2)
+    (run-case "feature-lint-reader-unsupported-dispatch"
+              "lib/checks/feature-lint.lisp"
+              (feature-lint-arguments "reader-invalid-dispatch")
+              "unsupported reader dispatch syntax #Q"
+              2)
+    (run-case "feature-lint-reader-unterminated-vector"
+              "lib/checks/feature-lint.lisp"
+              (feature-lint-arguments "reader-invalid-vector")
+              "unterminated vector literal"
+              2)
+    (run-case "feature-lint-reader-unterminated-string"
+              "lib/checks/feature-lint.lisp"
+              (feature-lint-arguments "reader-invalid-string")
+              "unterminated string"
+              2)
+    (run-case "feature-lint-reader-invalid-bit-vector"
+              "lib/checks/feature-lint.lisp"
+              (feature-lint-arguments "reader-invalid-bit-vector")
+              "invalid bit-vector literal"
+              2)
+    (progn
+      (run-case "feature-lint-reader-unterminated-block-comment"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-comment")
+                "unterminated block comment"
+                2)
+      (run-feature-case "feature-lint-reader-numeric-syntax" "reader-numeric" nil)
+      (run-case "feature-lint-reader-vector-count-exceeded"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-vector-count")
+                "vector literal exceeds declared length"
+                2)
+      (run-case "feature-lint-reader-bit-count-exceeded"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-bit-count")
+                "bit-vector literal length exceeds declared length"
+                2)
+      (run-case "feature-lint-reader-zero-ratio-denominator"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-ratio")
+                "radix denominator is zero in #b101/0"
+                2)
+      (run-case "feature-lint-reader-array-missing-rank"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-array-rank")
+                "array reader dispatch requires a numeric rank"
+                2)
+      (run-case "feature-lint-reader-binary-numeric-argument"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-binary-arg")
+                "numeric argument is not permitted for reader dispatch #2B"
+                2)
+      (run-case "feature-lint-reader-pathname-numeric-argument"
+                "lib/checks/feature-lint.lisp"
+                (feature-lint-arguments "reader-invalid-pathname-arg")
+                "numeric argument is not permitted for reader dispatch #2P"
+                2)
+      (progn
+        (run-feature-case
+                          "feature-lint-reader-escaped-case"
+                          "reader-escaped-case"
+                          "unknown feature package fixture/valid/unknown:part referenced in src/nodes/model.lisp")
+        (run-case "feature-lint-reader-complex-non-real-components"
+                  "lib/checks/feature-lint.lisp"
+                  (feature-lint-arguments "reader-invalid-complex")
+                  "complex reader dispatch requires real components"
+                  2)
+        (run-case "feature-lint-reader-structure-malformed-pairs"
+                  "lib/checks/feature-lint.lisp"
+                  (feature-lint-arguments "reader-invalid-structure")
+                  "structure reader dispatch requires a name and slot/value pairs"
+                  2)
+        (run-case "feature-lint-reader-array-inconsistent-dimensions"
+                  "lib/checks/feature-lint.lisp"
+                  (feature-lint-arguments "reader-invalid-array-shape")
+                  "array reader dispatch contents have inconsistent dimensions"
+                  2)
+        (progn
+          (run-case "feature-lint-reader-array-non-sequence-data"
+                    "lib/checks/feature-lint.lisp"
+                    (feature-lint-arguments "reader-invalid-array-data")
+                    "array reader dispatch requires sequence data"
+                    2)
+          (run-case "feature-lint-reader-array-dotted-list-data"
+                    "lib/checks/feature-lint.lisp"
+                    (feature-lint-arguments "reader-invalid-array-dotted-list")
+                    "array reader dispatch requires sequence data"
+                    2)))))
   (run-case "feature-lint-unknown-leading-option"
             "lib/checks/feature-lint.lisp"
             (append (quote ("--unrecognized-flag" "ignored"))
