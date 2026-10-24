@@ -5,7 +5,7 @@
 (defparameter +max-tree-entries+ 50000)
 (defparameter +max-tree-depth+ 128)
 
-(defvar *violations* nil)
+(progn (defvar *violations* nil) (defvar *source-root* nil))
 (defvar *total-asd-bytes* 0)
 
 (defun fail-closed (format-control &rest arguments)
@@ -244,9 +244,12 @@
                packages :test #'string-equal)))
 
 (defun defsystem-form-p (form)
-  (and (proper-list-p form) (>= (length form) 2)
-       (operator-symbol-p (first form) "DEFSYSTEM"
-                          '("ASDF" "ASDF/DEFSYSTEM" "ASDF-USER" "CL-USER"))))
+  (and (proper-list-p form)
+       (>= (length form) 2)
+       (or (eq (first form) (find-symbol "DEFSYSTEM" :asdf))
+           (operator-symbol-p (first form) "DEFSYSTEM"
+                              (list "ASDF" "ASDF/DEFSYSTEM"
+                                    "ASDF-USER" "CL-USER")))))
 
 (defun system-name-string (value path)
   (let ((name (cond ((stringp value) value)
@@ -550,8 +553,6 @@
                                        :test #'string=))
                              argv)))
     (if start (subseq argv start) nil)))
-
-(defvar *source-root* nil)
 
 (defun run-check (options)
   (let* ((source-argument (first (gethash "--source-root" options)))
