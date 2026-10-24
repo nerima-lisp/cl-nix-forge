@@ -25,8 +25,6 @@ structural properties each check reads.
 Check a repository's feature declarations, package boundaries, glossary, and
 export surface without executing its Lisp source or tests.
 
-It performs these seven checks:
-
 1. Feature declarations match the glossary headings, package declarations,
    source directories, and test directories.
 2. Configured forbidden path and package components, and numbered prefixes,
@@ -42,8 +40,14 @@ It performs these seven checks:
 7. Glossary key types and functions are exported by the feature package and
    included in the expected export surface.
 
-The scanner reads source and metadata as data with reader evaluation disabled.
-Unsupported reader syntax fails the check.
+The scanner parses source as data without evaluating Lisp forms or interning
+package names. It accepts standard Common Lisp reader syntax. For `#+` and
+`#-`, it parses the feature expression and scans the following form without
+selecting a feature set; both conditional bodies are checked. It consumes
+`#.` forms without evaluation. Literal contents do not count as feature
+declarations or package references. Unreadable `#<` objects and unsupported
+sharpsign dispatch syntax fail with a source location. The scanner does not
+consult or execute user-defined readtables or reader macros.
 
 Pass `src` as a path or absolute path string. Every other path argument is
 relative to the root of `src`. Repository rules such as package prefixes
@@ -90,8 +94,12 @@ string containing the changelog heading anchor. For example:
  (:symbol :remove "cl-cc/ast" "cl-cc/ast/nodes" "cl-cc/ast/nodes" "OLD-NODE" "CHANGELOG.md#anchor"))
 ```
 
-The checker validates the declared rows; each repository's snapshot test owns
-the full comparison between its facade exports and their home packages.
+`:keep` rows contain the facade, feature, home-package, and symbol names.
+`:add` and `:remove` rows also require a `CHANGELOG.md#...` anchor. For each
+glossary API, feature-lint checks that the symbol appears in the source package's
+exports and in the snapshot built from `:keep` and `:add` rows. Each
+repository's snapshot test owns the full comparison between facade exports and
+their home packages.
 
 `legacyInternalRefs` is a list of records shaped like
 `(:ref "t/nodes/internal-check.lisp" "cl-cc/ast" "%NODE-COUNT" 2)`, where
@@ -195,12 +203,12 @@ and a `mkScriptCheck` over the same system distinguishable in a build log.
 
 ### Why this is not just `doCheck`
 
-An enclosing `test-op` is not neutral. `cl-weave` is its own test subject,
-and its suite contains a test that performs `test-op` on `cl-weave/test`
-directly to assert the ASDF integration's failure path. Driving
-that suite from an enclosing `test-op` puts the same operation on the plan
-twice and ASDF rejects it as a circular dependency. Such a system is
-untestable through `asdf:test-system` by construction, not by oversight.
+An enclosing `test-op` is not neutral. [cl-weave](https://github.com/nerima-lisp/cl-weave),
+the Common Lisp test framework used here, has a suite that performs `test-op`
+on `cl-weave/test` directly to assert ASDF's failure path. Driving that suite
+from an enclosing `test-op` puts the same operation on the ASDF operation plan
+twice, and ASDF rejects it as a circular dependency. This suite cannot run
+through `asdf:test-system` for that reason.
 
 `run-tests.lisp` is the default entry point. Using the same command developers
 run by hand (`sbcl --script run-tests.lisp`) keeps the CI gate aligned with
@@ -234,11 +242,10 @@ checks.${system}.report = cl.mkCommandCheck {
 | `timeoutSeconds` | `null` | Optional time limit for the command; validation commands are not included |
 | `killAfterSeconds` | `30` | Grace period after the time limit before SIGKILL |
 
-`command` is a list and never a concatenated string. A filter expression like
-`"filtering > runs only tests matching a path substring"` contains spaces and
-a `>` that a string-concatenated command would hand to the shell as a
-redirection. A non-list, empty, or non-string-element `command` is an
-evaluation error.
+`command` is a list of argv items, never a concatenated shell string. The list
+preserves spaces and shell metacharacters such as `>` inside an argument rather
+than letting the shell interpret them. A non-list, empty, or non-string-element
+`command` is an evaluation error.
 
 Every artifact is asserted **present and non-empty**. Presence alone is not
 the property anyone wants: a reporter that opens its output file and then
@@ -293,8 +300,9 @@ naming the missing key.
 
 `skip` omits an implementation's check entirely, via `builtins.trace` so a
 skip is never silent. If both flags are true, `skip` takes precedence.
-`expectedFailure` still runs the check, so a regression to passing stays
-visible in the build log, but a failure does not fail `nix flake check`.
+`expectedFailure` still runs the check. An expected failure is logged and does
+not fail `nix flake check`. If the check passes, the build log says to remove
+the `expectedFailure` flag; the unexpected pass does not fail the build.
 
 ## `mkCoverageReport`
 

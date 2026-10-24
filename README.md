@@ -51,7 +51,7 @@ As a flake input, pinned to a release tag:
 
 ```nix
 inputs.cl-nix-forge = {
-  url = "github:nerima-lisp/cl-nix-forge/v0.6.1";
+  url = "github:nerima-lisp/cl-nix-forge/v0.7.2";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
@@ -64,8 +64,8 @@ There is nothing to install into a Lisp image and no runtime component.
 
 A whole nerima-lisp package's flake is one call —
 [`mkPackageFlake`](docs/src/reference/outputs.md#mkpackageflake) generates the
-packages, checks, apps, devShell, formatter and overlay the org standard
-requires, from the `.asd` and a source root.
+packages, checks, apps, devShell, formatter and overlay that the nerima-lisp
+template requires, from the `.asd` and a source root.
 
 ## Why not nixpkgs' `sbcl.buildASDFSystem`, or `cl-nix-lite`?
 
@@ -137,10 +137,6 @@ Issues and pull requests are welcome at
 <https://github.com/nerima-lisp/cl-nix-forge>. `nix flake check` must pass,
 and behaviour changes need an example that would have caught the old
 behaviour.
-
-## Support
-
-Report bugs at <https://github.com/nerima-lisp/cl-nix-forge/issues>.
 
 ## License
 
