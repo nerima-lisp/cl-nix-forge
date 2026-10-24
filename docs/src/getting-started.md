@@ -5,7 +5,7 @@
 ```nix
 {
   inputs.cl-nix-forge = {
-    url = "github:nerima-lisp/cl-nix-forge/v0.6.1";
+    url = "github:nerima-lisp/cl-nix-forge/v0.7.2";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 }
@@ -39,8 +39,6 @@ outputs = { self, nixpkgs, cl-nix-forge }:
     };
   };
 ```
-
-Three things are worth naming in that snippet.
 
 `version = cl.fromAsdSystem ./my-app.asd` reads the `:version` your `.asd`
 already declares, so a release edits one file. See
@@ -88,7 +86,7 @@ checks.${system}.my-app = cl.mkTestCheck self.packages.${system}.default;
 
 If the suite cannot be driven by an enclosing `test-op`, or needs a time
 limit, use [`mkScriptCheck`](reference/checks.md#mkscriptcheck), which
-defaults to the org-standard `run-tests.lisp` entry point:
+defaults to the nerima-lisp standard `run-tests.lisp` entry point:
 
 ```nix
 checks.${system}.my-app = cl.mkScriptCheck {
@@ -124,8 +122,8 @@ places to declare its own entry point has two places to disagree. See
 
 Add `installSource = true;` when the image loads a system at run time rather
 than only running what was dumped into it. It installs the sources and their
-dependency closure under the binary's own prefix, which is where an image
-looking for `share/common-lisp/source/` next to itself will find them; see
+dependency closure under `$out/share/common-lisp/source/`; an image can use
+that directory as its ASDF source registry root. See
 [what `$out` contains](reference/outputs.md#what-out-contains-and-what-an-image-may-assume).
 
 ## The rest of a flake
