@@ -116,7 +116,7 @@
             command = nixpkgs.lib.escapeShellArgs [
               "${pkgs.sbcl}/bin/sbcl"
               "--script"
-              "${./lib/checks}/tests.lisp"
+              "${./.}/lib/checks/tests.lisp"
             ];
           }}
           touch "$out"
