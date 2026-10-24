@@ -208,7 +208,7 @@
                           (source-syntax-error path start-line "unterminated string escape"))
                         (write-char (advance) raw))
                        ((char= character #\")
-                        (return (emit :string (get-output-stream-string raw) start-line)))))))
+                        (return (emit :string (get-output-stream-string raw) start-line))))))))
              (read-character-token ()
                (let ((start-line line)
                      (raw (make-string-output-stream)))
@@ -247,7 +247,7 @@
                  (let ((text (get-output-stream-string raw)))
                    (when (zerop (length text))
                      (source-syntax-error path start-line "empty token"))
-                   (emit :atom text start-line)))))) (loop while (< position length)
+                   (emit :atom text start-line))))) (loop while (< position length)
             for character = (char text position)
             for token-line = line
             do (cond
@@ -571,8 +571,7 @@
                 (fail-closed "export change reference must name a CHANGELOG.md anchor: ~S"
                              reference))))
           (when (member change (list :keep :add))
-            (push symbol (gethash feature-package exports)))))
-    exports))) (defun scan-feature-files (root features)
+            (push symbol (gethash feature-package exports)))))) exports)) (defun scan-feature-files (root features)
   (let ((file-paths nil)
         (records nil)
         (packages (make-hash-table :test #'equal))
@@ -603,9 +602,7 @@
               (when (lisp-file-p file)
                 (let ((relative (relative-pathname root file)))
                   (unless (assoc relative file-paths :test #'string=)
-                    (push (cons relative feature) file-paths))))))))
-    (setf file-paths (nreverse file-paths))
-    (dolist (record file-paths)
+                    (push (cons relative feature) file-paths))))))))) (setf file-paths (nreverse file-paths)) (dolist (record file-paths)
       (let* ((relative (car record))
              (feature (cdr record))
              (path (resolve-path root relative))
@@ -634,8 +631,7 @@
                 (parse-defpackage-options form record)))))
         (push (list :path relative :feature feature :forms forms
                     :packages (nreverse declared-names) :in-packages ins)
-              records)))
-    (values (nreverse records) packages source-files)))) (defun parse-defpackage-options (form package-record)
+              records))) (values (nreverse records) packages source-files))) (defun parse-defpackage-options (form package-record)
   (let ((children (cddr (syntax-node-children form))))
     (dolist (option children)
       (unless (eq (syntax-node-kind option) :list)
@@ -948,8 +944,7 @@
                                       (package-info-name source-info) symbol owner-package)))))))))
           ((package-prefix-p used prefix)
            (violation "03" "unknown package ~A imported by ~A in ~A"
-                      used (package-info-name source-info) path))))))
-  (dolist (reference (package-references-in-node form))
+                      used (package-info-name source-info) path))))))) (dolist (reference (package-references-in-node form))
     (let* ((target-package (package-reference-package reference))
            (target-info (gethash target-package package-records))
            (target-feature nil)
@@ -1007,7 +1002,7 @@
                      (< (gethash key actual-legacy 0) allowed-count))
                 (incf (gethash key actual-legacy 0))
                 (violation "05" "cross-feature internal reference ~A::~A from feature ~A in ~A"
-                           target-package symbol source-feature path)))))))))))) (when (and (string= mode "strict") (> (hash-table-count legacy) 0))
+                           target-package symbol source-feature path))))))))))) (when (and (string= mode "strict") (> (hash-table-count legacy) 0))
       (violation "05" "strict mode requires an empty legacy internal reference allowlist")) (dolist (edge edges)
       (when (and (graph-edge-from edge) (graph-edge-to edge)
                  (not (string= (graph-edge-from edge) (graph-edge-to edge))))
