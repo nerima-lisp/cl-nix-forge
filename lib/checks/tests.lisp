@@ -78,11 +78,11 @@
         (when (probe-file stderr-path)
           (delete-file stderr-path))))))
 
-(defun feature-lint-arguments (fixture)
+(defun feature-lint-arguments (fixture &optional (glossary-path "docs/glossary.md"))
   (append
    (list "--source-root" (fixture-root "feature-lint" fixture)
          "--feature-definitions" "nix/feature-dependencies.sexp"
-         "--glossary" "docs/glossary.md"
+         "--glossary" glossary-path
          "--glossary-heading-prefix" "## "
          "--export-surface" "t/export-surface.txt"
          "--mode" "strict"
@@ -139,10 +139,10 @@
       (when (plusp (length combined-output))
         (format *error-output* "  checker output:~%~A" combined-output)))))
 
-(defun run-feature-case (label fixture marker)
+(defun run-feature-case (label fixture marker &optional (glossary-path "docs/glossary.md"))
   (run-case label
             "lib/checks/feature-lint.lisp"
-            (feature-lint-arguments fixture)
+            (feature-lint-arguments fixture glossary-path)
             marker))
 
 (defun run-orphan-case (label fixture marker)
@@ -170,6 +170,14 @@
   (run-feature-case "feature-lint-package-designators-facade-outside"
                     "package-designators"
                     nil)
+  (progn
+  (run-feature-case "feature-lint-glossary-api-backticks"
+                    "glossary-api-backticks"
+                    nil)
+  (run-feature-case "feature-lint-glossary-unmatched-backticks"
+                    "glossary-api-backticks"
+                    "[feature-lint:glossary-export]"
+                    "docs/glossary-unmatched.md"))
   (run-case "feature-lint-08-reader-label"
             "lib/checks/feature-lint.lisp"
             (feature-lint-arguments "violation-08")

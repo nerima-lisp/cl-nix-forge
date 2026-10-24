@@ -503,12 +503,23 @@
              (char= (char trimmed (1- (length trimmed))) #\`))
         (subseq trimmed 1 (1- (length trimmed)))
         trimmed))) (defun glossary-api-values (value)
-  (let ((value (markdown-value value)))
+  (let* ((value (trim-space value))
+         (whole-span-p
+           (and (> (length value) 1)
+                (char= (char value 0) #\`)
+                (char= (char value (1- (length value))) #\`)
+                (not (position #\` value
+                               :start 1
+                               :end (1- (length value))))))
+         (value (if whole-span-p
+                    (subseq value 1 (1- (length value)))
+                    value)))
     (if (string-equal value "None.")
         nil
-        (remove "" (mapcar (lambda (part) (markdown-value part))
-                            (uiop:split-string value :separator ","))
-                :test #'string=)))) (defun plist-items (plist key)
+        (remove ""
+                (mapcar (function markdown-value)
+                        (uiop:split-string value :separator ","))
+                :test (function string=))))) (defun plist-items (plist key)
   (let ((value (plist-value plist key)))
     (unless (listp value)
       (fail-closed "~S option must contain a list" key))
