@@ -98,6 +98,30 @@
         assert pkgs.lib.all (result: result) (builtins.attrValues results);
         pkgs.runCommand "version-extractor-contract" { } "touch $out";
 
+      staticCheckerContract =
+        system:
+        let
+          pkgs = pkgsFor system;
+          checkRuntime = import ./lib/core/check-runtime.nix {
+            inherit pkgs;
+            lib = pkgs.lib;
+          };
+        in
+        pkgs.runCommand "static-checker-contract" {
+          nativeBuildInputs = checkRuntime.packages ++ [ pkgs.sbcl ];
+        } ''
+          ${checkRuntime.isolateHome}
+          ${checkRuntime.withTimeLimit {
+            label = "static-checker-contract";
+            command = nixpkgs.lib.escapeShellArgs [
+              "${pkgs.sbcl}/bin/sbcl"
+              "--script"
+              "${./lib/checks}/tests.lisp"
+            ];
+          }}
+          touch "$out"
+        '';
+
       # docs/src/reference/api.md and lib/default.nix are supposed to name the
       # same attributes. Until this check nothing held them to it, and the gap
       # was not theoretical: `mkPackageFlake` was exported in v0.3.0 and
@@ -146,7 +170,26 @@
         system:
         let
           pkgs = pkgsFor system;
+          cl = clFor system;
           contributors = contributorsFor system;
+          featureLintBuilderContract = cl.mkFeatureLintCheck {
+            src = ./lib/checks/fixtures/feature-lint/valid;
+            featureDefinitions = "nix/feature-dependencies.sexp";
+            glossary = "docs/glossary.md";
+            glossaryHeadingPrefix = "## ";
+            exportSurface = "t/export-surface.txt";
+            mode = "strict";
+            legacyInternalRefs = "t/legacy-internal-refs.sexp";
+            forbiddenNames = [ "phases" "misc" "utils" "helpers" ];
+            numberedPrefixes = [ "FR-" "W" ];
+            packagePrefix = "fixture/valid/";
+            infraSuffix = "/infra";
+          };
+          orphanTestsBuilderContract = cl.mkOrphanTestCheck {
+            src = ./lib/checks/fixtures/orphan-tests/multi-system-nested;
+            testRoots = [ "t" ];
+            testSystems = [ "forge-tests/alpha" "forge-tests/beta" ];
+          };
 
           # This repository's own test suite. `contributorsFor` says the
           # examples double as it: `examples/*/default.nix` drive `mkPackage`,
@@ -161,6 +204,9 @@
           suite = (mergeAttr "checks" contributors) // {
             version-extractor-contract = versionExtractorContract system;
             api-index-contract = apiIndexContract system;
+            static-checker-contract = staticCheckerContract system;
+            feature-lint-builder-contract = featureLintBuilderContract;
+            orphan-tests-builder-contract = orphanTestsBuilderContract;
           };
         in
         suite
