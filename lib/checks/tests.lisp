@@ -1,7 +1,11 @@
 (in-package #:cl-user)
 
 (defparameter *contract-root*
-  (truename (merge-pathnames #P"../../" *load-truename*)))
+  (truename
+   (merge-pathnames #P"../../"
+                    (make-pathname :name nil
+                                   :type nil
+                                   :defaults *load-truename*))))
 (defparameter *contract-assertions* 0)
 (defparameter *contract-failures* 0)
 (defparameter *contract-run-number* 0)
