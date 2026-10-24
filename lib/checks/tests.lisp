@@ -167,6 +167,9 @@
 (progn
   (run-feature-case "feature-lint-07-glossary-export" "violation-07"
                     "[feature-lint:glossary-export]")
+  (run-feature-case "feature-lint-package-designators-facade-outside"
+                    "package-designators"
+                    nil)
   (run-case "feature-lint-08-reader-label"
             "lib/checks/feature-lint.lisp"
             (feature-lint-arguments "violation-08")
