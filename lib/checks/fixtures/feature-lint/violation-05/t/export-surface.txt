@@ -1,4 +1,0 @@
-((:symbol :keep "fixture/valid/facade" "fixture/valid/nodes"
-  "fixture/valid/nodes" "MAKE-NODE")
- (:symbol :keep "fixture/valid/other-facade" "fixture/valid/other"
-  "fixture/valid/other" "MAKE-OTHER"))
