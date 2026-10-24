@@ -1,0 +1,14 @@
+((:feature "nodes"
+  :source-dirs ("src/nodes")
+  :test-dir "t/nodes"
+  :facade-packages ("fixture/valid/facade")
+  :domain-package "fixture/valid/nodes"
+  :infra-package nil
+  :depends-on ())
+ (:feature "other"
+  :source-dirs ("src/other")
+  :test-dir "t/other"
+  :facade-packages ("fixture/valid/other-facade")
+  :domain-package "fixture/valid/other"
+  :infra-package nil
+  :depends-on ()))

@@ -1,0 +1,2 @@
+((:symbol :keep "fixture/valid/facade" "fixture/valid/nodes"
+  "fixture/valid/nodes" "MAKE-NODE"))
