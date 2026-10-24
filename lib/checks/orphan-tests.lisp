@@ -545,14 +545,7 @@
              result)
     result))
 
-(defun command-arguments ()
-  (let* ((argv sb-ext:*posix-argv*)
-         (start (position-if (lambda (value)
-                               (member value '("--source-root" "--test-root"
-                                               "--test-system" "--allowlist")
-                                       :test #'string=))
-                             argv)))
-    (if start (subseq argv start) nil)))
+(defun command-arguments () (rest sb-ext:*posix-argv*))
 
 (defun run-check (options)
   (let* ((source-argument (first (gethash "--source-root" options)))

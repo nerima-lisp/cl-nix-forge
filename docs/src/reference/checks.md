@@ -86,9 +86,12 @@ string containing the changelog heading anchor. For example:
 
 ```lisp
 ((:symbol :keep "cl-cc/ast" "cl-cc/ast/nodes" "cl-cc/ast/nodes" "MAKE-NODE")
- (:symbol :add "cl-cc/ast" "cl-cc/ast/nodes" "cl-cc/ast/nodes" "MAKE-NODE" "CHANGELOG.md#anchor")
- (:symbol :remove "cl-cc/ast" "cl-cc/ast/nodes" "cl-cc/ast/nodes" "MAKE-NODE" "CHANGELOG.md#anchor"))
+ (:symbol :add "cl-cc/ast" "cl-cc/ast/nodes" "cl-cc/ast/nodes" "NODE" "CHANGELOG.md#anchor")
+ (:symbol :remove "cl-cc/ast" "cl-cc/ast/nodes" "cl-cc/ast/nodes" "OLD-NODE" "CHANGELOG.md#anchor"))
 ```
+
+The checker validates the declared rows; each repository's snapshot test owns
+the full comparison between its facade exports and their home packages.
 
 `legacyInternalRefs` is a list of records shaped like
 `(:ref "t/nodes/internal-check.lisp" "cl-cc/ast" "%NODE-COUNT" 2)`, where
@@ -225,7 +228,7 @@ checks.${system}.report = cl.mkCommandCheck {
 | `drv` | required | Supplies the working tree, resolved registry and native-library environment |
 | `name` | required | A single system routinely has ten of these, so a derived name would collide |
 | `command` | required | argv, as a **list** |
-| `artifacts` | `[ ]` | Paths relative to the build tree; files or directories |
+| `artifacts` | `[ ]` | Paths resolved from the working directory of `checkPhase`, the built source tree; files or directories |
 | `validationCommands` | `[ ]` | Shell snippets run after the artifacts are asserted |
 | `nativeBuildInputs` | `[ ]` | The validators — `pkgs.jq`, `pkgs.libxml2`, `pkgs.perl`, … |
 | `timeoutSeconds` | `null` | Optional time limit for the command; validation commands are not included |
