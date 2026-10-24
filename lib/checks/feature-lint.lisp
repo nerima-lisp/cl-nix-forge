@@ -164,8 +164,8 @@
              (emit (kind &optional (value "") (token-line line))
                (push (make-lexeme :kind kind :text value :line token-line) tokens))
              (delimiter-p (character)
-               (or (find character '(#\Space #\Tab #\Newline #\Return
-                                     #\( #\) #\" #\; #\' #\` #\,))
+               (or (find character '(#\Space #\Tab #\Newline #\Return #\Page
+                                     #\( #\) #\" #\; #\' #\` #\, #\#))
                    (null character)))
              (skip-line-comment ()
                (loop while (and (< position length)
@@ -209,14 +209,55 @@
                  (write-char (advance) raw)
                  (write-char (advance) raw)
                  (when (>= position length)
-                   (source-syntax-error path start-line "incomplete character literal"))
-                 (write-char (advance) raw)
-                 (loop while (and (< position length)
-                                  (not (delimiter-p (char text position))))
-                       do (write-char (advance) raw))
-                 (emit :literal (get-output-stream-string raw) start-line)))
+                   (source-syntax-error path start-line
+                                        "character literal requires a character or name after #\\"))
+                 (let ((first (advance))
+                       (in-bars nil)
+                       (escaped nil))
+                   (write-char first raw)
+                   (unless (or (delimiter-p first)
+                               (and (or (char= first #\\) (char= first #\|))
+                                    (or (>= position length)
+                                        (delimiter-p (char text position)))))
+                     (when (char= first #\|)
+                       (setf in-bars t))
+                     (when (char= first #\\)
+                       (setf escaped t))
+                     (loop while (< position length)
+                           for character = (char text position)
+                           do (cond
+                                (escaped
+                                 (write-char (advance) raw)
+                                 (setf escaped nil))
+                                ((char= character #\\)
+                                 (write-char (advance) raw)
+                                 (setf escaped t))
+                                ((char= character #\|)
+                                 (write-char (advance) raw)
+                                 (setf in-bars (not in-bars)))
+                                ((and (not in-bars) (delimiter-p character))
+                                 (return))
+                                (t (write-char (advance) raw))))
+                     (when (or escaped in-bars)
+                       (source-syntax-error path start-line
+                                            "unterminated escaped character name")))
+                   (let ((token (get-output-stream-string raw)))
+                     (when (> (length token) 3)
+                       (let ((in-bars nil)
+                             (escaped nil))
+                         (loop for character across (subseq token 2)
+                               do (cond
+                                    (escaped (setf escaped nil))
+                                    ((char= character #\\) (setf escaped t))
+                                    ((char= character #\|) (setf in-bars (not in-bars)))
+                                    ((and (not in-bars) (char= character #\:))
+                                     (source-syntax-error path start-line
+                                                          "character name must not contain a package marker ~A"
+                                                          token))))))
+                     (emit :literal token start-line)))))
              (read-atom ()
                (let ((start-line line)
+                     (start-position position)
                      (raw (make-string-output-stream))
                      (in-bars nil)
                      (escaped nil))
@@ -232,7 +273,10 @@
                             ((char= character #\|)
                              (write-char (advance) raw)
                              (setf in-bars (not in-bars)))
-                            ((and (not in-bars) (delimiter-p character))
+                            ((and (not in-bars)
+                                  (delimiter-p character)
+                                  (not (and (= position start-position)
+                                            (eql (at 1) #\:))))
                              (return))
                             (t (write-char (advance) raw)))
                        finally
@@ -241,11 +285,185 @@
                  (let ((text (get-output-stream-string raw)))
                    (when (zerop (length text))
                      (source-syntax-error path start-line "empty token"))
-                   (emit :atom text start-line))))) (loop while (< position length)
+                   (when (string= text "#:")
+                     (source-syntax-error path start-line "uninterned symbol requires a name"))
+                   (emit :atom text start-line))))
+             (read-dispatch-body (spelling start-line &optional allow-empty)
+               (let ((raw (make-string-output-stream)))
+                 (loop while (and (< position length)
+                                  (not (delimiter-p (char text position))))
+                       do (write-char (advance) raw))
+                 (let ((body (get-output-stream-string raw)))
+                   (when (and (zerop (length body)) (not allow-empty))
+                     (source-syntax-error path start-line
+                                          "incomplete reader dispatch syntax ~A" spelling))
+                   body)))
+             (radix-digit-value (character)
+               (let* ((code (char-code character))
+                      (code (if (<= (char-code #\a) code (char-code #\z))
+                                (- code (- (char-code #\a) (char-code #\A)))
+                                code)))
+                 (cond
+                   ((<= (char-code #\0) code (char-code #\9))
+                    (- code (char-code #\0)))
+                   ((<= (char-code #\A) code (char-code #\Z))
+                    (+ 10 (- code (char-code #\A))))
+                   (t nil))))
+             (radix-rational-status (token radix)
+               (let* ((start (if (and (plusp (length token))
+                                     (find (char token 0) "+-"))
+                                1
+                                0))
+                      (slash (position #\/ token :start start)))
+                 (labels ((digits-p (from to)
+                            (and (< from to)
+                                 (loop for index from from below to
+                                       for digit = (radix-digit-value (char token index))
+                                       always (and digit (< digit radix)))))
+                          (nonzero-digit-p (from to)
+                            (loop for index from from below to
+                                  for digit = (radix-digit-value (char token index))
+                                  thereis (and digit (plusp digit)))))
+                   (if slash
+                       (if (and (null (position #\/ token :start (1+ slash)))
+                                (digits-p start slash)
+                                (digits-p (1+ slash) (length token)))
+                           (if (nonzero-digit-p (1+ slash) (length token))
+                               :valid
+                               :zero-denominator)
+                           :invalid)
+                       (if (digits-p start (length token)) :valid :invalid)))))
+             (radix-value (digits)
+               (let ((value 0)
+                     (valid t))
+                 (loop for character across digits
+                       for digit = (radix-digit-value character)
+                       do (unless digit
+                            (setf valid nil)
+                            (return))
+                          (setf value (+ (* value 10) digit))
+                          (when (> value 36)
+                            (setf valid nil)
+                            (return)))
+                 (and valid value)))
+             (canonical-label (digits)
+               (let ((label (string-left-trim "0" digits)))
+                 (if (plusp (length label)) label "0")))
+             (decimal-token-at-least-p (digits count)
+               (let* ((normalized (canonical-label digits))
+                      (count-text (write-to-string count)))
+                 (or (> (length normalized) (length count-text))
+                     (and (= (length normalized) (length count-text))
+                          (not (string< normalized count-text))))))
+             (read-dispatch ()
+               (let ((start-line line)
+                     (prefix (make-string-output-stream)))
+                 (write-char (advance) prefix)
+                 (let ((digits (make-string-output-stream)))
+                   (loop while (ascii-digit-p (at 0))
+                         do (write-char (advance) digits))
+                   (let* ((digits (get-output-stream-string digits))
+                          (dispatch (at 0)))
+                     (unless dispatch
+                       (source-syntax-error path start-line
+                                            "incomplete reader dispatch syntax ~A"
+                                            (get-output-stream-string prefix)))
+                     (write-string digits prefix)
+                     (write-char (advance) prefix)
+                     (let* ((spelling (get-output-stream-string prefix))
+                            (code (char-upcase dispatch)))
+                       (case code
+                         (#\(
+                          (emit :vector-open spelling start-line))
+                         (#\*
+                          (let ((bits (read-dispatch-body spelling start-line t)))
+                            (unless (every (lambda (character)
+                                             (find character "01"))
+                                           bits)
+                              (source-syntax-error path start-line
+                                                   "invalid bit-vector literal ~A"
+                                                   (concatenate 'string spelling bits)))
+                            (when (and (plusp (length digits))
+                                       (not (decimal-token-at-least-p digits (length bits))))
+                              (source-syntax-error path start-line
+                                                   "bit-vector literal length exceeds declared length ~A"
+                                                   spelling))
+                            (when (and (plusp (length digits))
+                                       (decimal-token-at-least-p digits 2)
+                                       (zerop (length bits)))
+                              (source-syntax-error path start-line
+                                                   "bit-vector literal requires bits for declared length ~A"
+                                                   spelling))
+                            (emit :literal (concatenate 'string spelling bits) start-line)))
+                         ((#\B #\O #\X)
+                          (when (plusp (length digits))
+                            (source-syntax-error path start-line
+                                                 "numeric argument is not permitted for reader dispatch ~A"
+                                                 spelling))
+                          (let* ((radix (case code (#\B 2) (#\O 8) (#\X 16)))
+                                 (number (read-dispatch-body spelling start-line))
+                                 (status (radix-rational-status number radix)))
+                            (unless (eq status :valid)
+                              (source-syntax-error path start-line
+                                                   (if (eq status :zero-denominator)
+                                                       "radix denominator is zero in ~A"
+                                                       "invalid radix rational literal ~A")
+                                                   (concatenate 'string spelling number)))
+                            (emit :literal (concatenate 'string spelling number) start-line)))
+                         (#\R
+                          (let ((radix (and (plusp (length digits))
+                                            (radix-value digits))))
+                            (unless (and radix (<= 2 radix 36))
+                              (source-syntax-error path start-line
+                                                   "invalid radix dispatch syntax ~A"
+                                                   spelling))
+                            (let* ((number (read-dispatch-body spelling start-line))
+                                   (status (radix-rational-status number radix)))
+                              (unless (eq status :valid)
+                                (source-syntax-error path start-line
+                                                     (if (eq status :zero-denominator)
+                                                         "radix denominator is zero in ~A"
+                                                         "invalid radix rational literal ~A")
+                                                     (concatenate 'string spelling number)))
+                              (emit :literal (concatenate 'string spelling number) start-line))))
+                         (#\A
+                          (unless (plusp (length digits))
+                            (source-syntax-error path start-line
+                                                 "array reader dispatch requires a numeric rank ~A"
+                                                 spelling))
+                          (emit :dispatch-literal spelling start-line))
+                         ((#\C #\P #\S)
+                          (when (plusp (length digits))
+                            (source-syntax-error path start-line
+                                                 "numeric argument is not permitted for reader dispatch ~A"
+                                                 spelling))
+                          (emit :dispatch-literal spelling start-line))
+                         ((#\= #\#)
+                          (unless (plusp (length digits))
+                            (source-syntax-error path start-line
+                                                 "malformed reader label syntax ~A"
+                                                 spelling))
+                          (emit (if (char= code #\=) :label-definition :label-reference)
+                                (canonical-label digits) start-line))
+                         (#\.
+                          (when (plusp (length digits))
+                            (source-syntax-error path start-line
+                                                 "numeric argument is not permitted for reader dispatch ~A"
+                                                 spelling))
+                          (emit :dispatch-literal spelling start-line))
+                         (#\<
+                          (source-syntax-error path start-line
+                                               "unreadable reader syntax ~A" spelling))
+                         (otherwise
+                          (source-syntax-error path start-line
+                                               "unsupported reader dispatch syntax ~A"
+                                               spelling)))))))))
+      (loop while (< position length)
             for character = (char text position)
             for token-line = line
             do (cond
-                 ((find character '(#\Space #\Tab #\Newline #\Return)) (advance))
+                 ((find character '(#\Space #\Tab #\Newline #\Return #\Page))
+                  (advance))
                  ((char= character #\;) (advance) (skip-line-comment))
                  ((and (char= character #\#) (eql (at 1) #\|)) (skip-block-comment))
                  ((char= character #\") (read-string-token))
@@ -259,6 +477,7 @@
                       (progn (advance) (emit :prefix ",@" token-line))
                       (emit :prefix "," token-line)))
                  ((and (char= character #\#) (eql (at 1) #\\)) (read-character-token))
+                 ((and (char= character #\#) (eql (at 1) #\:)) (read-atom))
                  ((and (char= character #\#) (eql (at 1) #\'))
                   (advance) (advance) (emit :prefix "#'" token-line))
                  ((and (char= character #\#) (member (at 1) '(#\+ #\-)))
@@ -266,48 +485,480 @@
                     (emit :conditional prefix token-line)))
                  ((and (char= character #\#) (eql (at 1) #\;))
                   (advance) (advance) (emit :discard "#;" token-line))
-                 ((and (char= character #\#) (eql (at 1) #\.))
-                  (source-syntax-error path token-line "read-time evaluation syntax #. is unsupported"))
-                 (t (if (char= character #\#) (if (eql (at 1) #\:) (read-atom) (source-syntax-error path token-line "unsupported reader dispatch syntax beginning with #~A" (or (at 1) #\Space))) (read-atom))))) (nreverse tokens))))
+                 ((char= character #\#) (read-dispatch))
+                 (t (read-atom))))
+      (nreverse tokens))))
 (defun parse-source-tokens (tokens path)
-  (let ((remaining tokens))
+  (let ((remaining tokens)
+        (defined-labels (make-hash-table :test #'equal)))
     (labels ((next-line ()
                (if remaining (lexeme-line (first remaining)) 1))
+             (decimal-token-at-least-p (digits count)
+               (let* ((normalized (string-left-trim "0" digits))
+                      (normalized (if (plusp (length normalized)) normalized "0"))
+                      (count-text (write-to-string count)))
+                 (or (> (length normalized) (length count-text))
+                     (and (= (length normalized) (length count-text))
+                          (not (string< normalized count-text))))))
+             (decimal-token-zero-p (digits)
+               (every (lambda (character) (char= character #\0)) digits))
              (parse-one ()
                (unless remaining
-                 (source-syntax-error path (next-line) "missing form after reader prefix"))
+                 (source-syntax-error path (next-line) "missing source form"))
                (let* ((token (pop remaining))
                       (kind (lexeme-kind token))
                       (line (lexeme-line token)))
                  (case kind
-                   (:open
-                    (let ((children nil))
-                      (loop
-                        (when (null remaining)
-                          (source-syntax-error path line "unterminated list"))
-                        (when (eq (lexeme-kind (first remaining)) :close)
-                          (pop remaining)
-                          (return))
-                        (push (parse-one) children))
-                      (make-syntax-node :kind :list :children (nreverse children) :line line)))
-                   (:close (source-syntax-error path line "unexpected closing parenthesis"))
+                   (:open (parse-delimited token :list))
+                   (:vector-open (parse-delimited token :literal))
+                   (:close
+                    (source-syntax-error path line "unexpected closing parenthesis"))
                    (:prefix
+                    (unless remaining
+                      (source-syntax-error path line "missing form after reader prefix ~A"
+                                           (lexeme-text token)))
                     (make-syntax-node :kind :prefix :value (lexeme-text token)
                                       :children (list (parse-one)) :line line))
                    (:conditional
-                    (make-syntax-node :kind :conditional :value (lexeme-text token)
-                                      :children (list (parse-one) (parse-one)) :line line))
+                    (unless remaining
+                      (source-syntax-error path line "missing feature expression after ~A"
+                                           (lexeme-text token)))
+                    (let ((feature-expression (parse-one)))
+                      (unless remaining
+                        (source-syntax-error path line "missing form after feature expression ~A"
+                                             (lexeme-text token)))
+                      (make-syntax-node :kind :conditional :value (lexeme-text token)
+                                        :children (list feature-expression (parse-one))
+                                        :line line)))
                    (:discard
+                    (unless remaining
+                      (source-syntax-error path line "missing form after reader comment #;"))
                     (make-syntax-node :kind :discard :children (list (parse-one)) :line line))
+                   (:dispatch-literal
+                    (unless remaining
+                      (source-syntax-error path line "missing form after reader dispatch ~A"
+                                           (lexeme-text token)))
+                    (let* ((value (lexeme-text token))
+                           (child (parse-one))
+                           (dispatch (char-upcase (char value (1- (length value))))))
+                      (labels
+ ((ascii-digits-p (raw start end)
+    (and (< start end)
+         (loop for index from start below end
+               always (<= (char-code #\0) (char-code (char raw index))
+                          (char-code #\9)))))
+  (canonical-decimal (digits)
+    (let ((digits (string-left-trim "0" digits)))
+      (if (plusp (length digits)) digits "0")))
+  (one-p (digits) (string= (canonical-decimal digits) "1"))
+  (decrement-decimal (digits)
+    (let* ((copy (copy-seq (canonical-decimal digits)))
+           (index (1- (length copy))))
+      (loop while (char= (char copy index) #\0)
+            do (setf (char copy index) #\9)
+               (decf index))
+      (setf (char copy index)
+            (code-char (1- (char-code (char copy index)))))
+      (canonical-decimal copy)))
+  (real-token-p (raw)
+    (let* ((length (length raw))
+           (start (if (and (plusp length) (find (char raw 0) "+-")) 1 0)))
+      (labels ((digits-p (from to) (ascii-digits-p raw from to))
+               (marker-p (character) (find character "sSfFdDlLeE")))
+        (and (< start length)
+             (not (find (code-char 92) raw))
+             (not (find (code-char 124) raw))
+             (not (find (code-char 58) raw))
+             (let ((slash (position #\/ raw :start start)))
+               (if slash
+                   (and (null (position #\/ raw :start (1+ slash)))
+                        (null (position-if #'marker-p raw :start start))
+                        (digits-p start slash)
+                        (digits-p (1+ slash) length)
+                        (loop for index from (1+ slash) below length
+                              thereis (not (char= (char raw index) #\0))))
+                   (let* ((marker (position-if #'marker-p raw :start start))
+                          (end (or marker length))
+                          (dot (position #\. raw :start start :end end)))
+                     (and (or (null marker)
+                              (let* ((exp-start (1+ marker))
+                                     (exp-digits
+                                       (if (and (< exp-start length)
+                                                (find (char raw exp-start) "+-"))
+                                           (1+ exp-start)
+                                           exp-start)))
+                                (digits-p exp-digits length)))
+                          (if dot
+                              (if marker
+                                  (and (or (digits-p start dot) (digits-p (1+ dot) end)) (or (= (1+ dot) end) (digits-p (1+ dot) end)))
+                                  (if (= dot (1- length))
+                                      (digits-p start dot)
+                                      (and (or (digits-p start dot) (= start dot))
+                                           (digits-p (1+ dot) length))))
+                              (digits-p start end))))))))))
+  (label-reference-p (value)
+    (and (> (length value) 2)
+         (char= (char value 0) #\#)
+         (char= (char value (1- (length value))) #\#)
+         (ascii-digits-p value 1 (1- (length value)))))
+  (radix-number-p (value)
+    (and (> (length value) 2)
+         (char= (char value 0) #\#)
+         (or (find (char-upcase (char value 1)) "BOX")
+             (let ((index 1))
+               (loop while (and (< index (length value))
+                                (<= (char-code #\0) (char-code (char value index))
+                                    (char-code #\9)))
+                     do (incf index))
+               (and (> index 1)
+                    (< index (length value))
+                    (char-equal (char value index) #\R))))))
+  (real-status (node)
+    (case (syntax-node-kind node)
+      (:atom (if (real-token-p (syntax-node-value node)) :real :not-real))
+      (:literal
+       (let ((value (syntax-node-value node)))
+         (cond
+           ((radix-number-p value) :real)
+           ((starts-with value "#\\") :not-real)
+           ((member (string-upcase value) (list "#P" "#A" "#S") :test (function string=))
+            :not-real)
+           ((and (> (length value) 1)
+                 (char= (char value 0) #\#)
+                 (char= (char value (1- (length value))) #\()
+                 (every (lambda (character) (ascii-digit-p character))
+                        (subseq value 1 (1- (length value)))))
+            :not-real)
+           ((let ((star (position #\* value :start 1)))
+              (and star
+                   (char= (char value 0) #\#)
+                   (every (lambda (character) (ascii-digit-p character))
+                          (subseq value 1 star))))
+            :not-real)
+           ((and (> (length value) 2)
+                 (char= (char value 0) #\#)
+                 (ascii-digits-p value 1 (1- (length value)))
+                 (char-equal (char value (1- (length value))) #\A))
+            :not-real)
+           (t :unknown))))
+      (:prefix
+       (let ((value (syntax-node-value node)))
+         (if (and (> (length value) 2)
+                  (char= (char value 0) #\#)
+                  (char= (char value (1- (length value))) #\=)
+                  (ascii-digits-p value 1 (1- (length value))))
+             (real-status (first (syntax-node-children node)))
+             :not-real)))
+      (:conditional :unknown)
+      (otherwise :not-real)))
+  (symbol-status (node)
+    (case (syntax-node-kind node)
+      (:atom (if (real-token-p (syntax-node-value node)) :not-symbol :symbol))
+      (:prefix
+       (let ((value (syntax-node-value node)))
+         (if (and (> (length value) 2)
+                  (char= (char value 0) #\#)
+                  (char= (char value (1- (length value))) #\=)
+                  (ascii-digits-p value 1 (1- (length value))))
+             (symbol-status (first (syntax-node-children node)))
+             :unknown)))
+      (:literal
+       (let ((value (syntax-node-value node)))
+         (if (or (string= value "#.") (label-reference-p value))
+             :unknown
+             :not-symbol)))
+      (:conditional :unknown)
+      (otherwise :not-symbol)))
+  (slot-status (node)
+    (case (syntax-node-kind node)
+      (:string :valid)
+      (:atom (if (real-token-p (syntax-node-value node)) :invalid :valid))
+      (:prefix
+       (let ((value (syntax-node-value node)))
+         (if (and (> (length value) 2)
+                  (char= (char value 0) #\#)
+                  (char= (char value (1- (length value))) #\=)
+                  (ascii-digits-p value 1 (1- (length value))))
+             (slot-status (first (syntax-node-children node)))
+             :unknown)))
+      (:literal
+       (let ((value (syntax-node-value node)))
+         (cond ((and (> (length value) 2)
+                     (char= (char value 0) #\#)
+                     (char= (char value 1) (code-char 92)))
+                :valid)
+               ((or (string= value "#.") (label-reference-p value)) :unknown)
+               (t :invalid))))
+      (:conditional :unknown)
+      (otherwise :invalid)))
+  (proper-list-info (node)
+    (case (syntax-node-kind node)
+      (:list
+       (values :known (length (syntax-node-children node))
+               (syntax-node-children node)))
+      (:dotted-list
+       (let* ((children (syntax-node-children node))
+              (prefix (butlast children))
+              (tail (car (last children))))
+         (multiple-value-bind (status tail-length tail-contents)
+             (proper-list-info tail)
+           (case status
+             (:known
+              (values :known (+ (length prefix) tail-length)
+                      (append prefix tail-contents)))
+             (:unknown (values :unknown nil nil))
+             (otherwise (values :nonsequence nil nil))))))
+      (:atom
+       (if (string= (reader-name (syntax-node-value node)) "nil")
+           (values :unknown nil nil)
+           (values :nonsequence nil nil)))
+      (:conditional (values :unknown nil nil))
+      (:prefix (values :unknown nil nil))
+      (:literal
+       (let ((value (syntax-node-value node)))
+         (if (or (string= value "#.") (label-reference-p value))
+             (values :unknown nil nil)
+             (values :nonsequence nil nil))))
+      (otherwise (values :nonsequence nil nil))))
+  (sequence-info (node)
+    (case (syntax-node-kind node)
+      (:list
+       (values :known (write-to-string (length (syntax-node-children node)))
+               (syntax-node-children node)))
+      (:dotted-list
+       (multiple-value-bind (status count contents)
+           (proper-list-info node)
+         (values status (and count (write-to-string count)) contents)))
+      (:atom
+       (if (string= (reader-name (syntax-node-value node)) "nil")
+           (values :unknown nil nil)
+           (values :nonsequence nil nil)))
+      (:conditional (values :unknown nil nil))
+      (:string (values :unknown nil nil))
+      (:literal
+       (let* ((value (syntax-node-value node))
+              (length (length value)))
+         (cond
+           ((and (> length 1)
+                 (char= (char value 0) #\#)
+                 (char= (char value (1- length)) (code-char 40)))
+            (let ((digits (subseq value 1 (1- length))))
+              (values :known
+                      (if (plusp (length digits))
+                          (canonical-decimal digits)
+                          (write-to-string (length (syntax-node-children node))))
+                      (syntax-node-children node))))
+           ((or (string= value "#.")
+                (label-reference-p value)
+                (and (char= (char value 0) #\#)
+                     (or (char-equal (char value (1- length)) #\A)
+                         (let ((star (position #\* value :start 1)))
+                           (and star
+                                (or (= star 1)
+                                    (ascii-digits-p value 1 star)))))))
+            (values :unknown nil nil))
+           (t (values :nonsequence nil nil)))))
+      (otherwise (values :nonsequence nil nil)))) (array-shape (node rank)
+    (let ((kind (syntax-node-kind node))
+          (value (syntax-node-value node)))
+      (cond
+        ((string= (canonical-decimal rank) "0") (values :valid nil))
+        ((and (eq kind :prefix)
+              (> (length value) 2)
+              (char= (char value 0) #\#)
+              (char= (char value (1- (length value))) #\=)
+              (ascii-digits-p value 1 (1- (length value))))
+         (array-shape (first (syntax-node-children node)) rank))
+        ((and (eq kind :literal) (string= value "#."))
+         (values :unknown nil))
+        ((eq kind :conditional) (values :unknown nil))
+        (t
+         (multiple-value-bind (sequence-status length children)
+             (sequence-info node)
+           (case sequence-status
+             (:unknown (values :unknown nil))
+             (:nonsequence (values :not-sequence nil))
+             (:known
+              (cond
+                ((string= length "0") (values :valid (list "0")))
+                ((one-p rank) (values :valid (list length)))
+                (t
+                 (let* ((next-rank (decrement-decimal rank))
+                        (child-shapes
+                          (mapcar (lambda (child)
+                                    (multiple-value-list (array-shape child next-rank)))
+                                  children)))
+                   (cond
+                     ((some (lambda (item)
+                              (eq (first item) :inconsistent-dimensions))
+                            child-shapes)
+                      (values :inconsistent-dimensions nil))
+                     ((some (lambda (item)
+                              (member (first item) '(:not-sequence :rank-mismatch)))
+                            child-shapes)
+                      (values :rank-mismatch nil))
+                     ((some (lambda (item) (eq (first item) :unknown)) child-shapes)
+                      (values :unknown nil))
+                     ((null child-shapes) (values :unknown nil))
+                     ((not (every (lambda (item)
+                                    (equal (second item) (second (first child-shapes))))
+                                  (rest child-shapes)))
+                      (values :inconsistent-dimensions nil))
+                     (t (values :valid
+                                (cons length (second (first child-shapes))))))))))))))))
+ ) (case dispatch
+   (#\A
+    (let ((rank (subseq value 1 (1- (length value)))))
+      (multiple-value-bind (status shape) (array-shape child rank)
+        (declare (ignore shape))
+        (case status
+          (:not-sequence
+           (source-syntax-error path line
+                                "array reader dispatch requires sequence data ~A" value))
+          (:inconsistent-dimensions
+           (source-syntax-error path line
+                                "array reader dispatch contents have inconsistent dimensions ~A"
+                                value))
+          (:rank-mismatch
+           (source-syntax-error path line
+                                "array reader dispatch contents do not match rank ~A" value)))))) (#\C
+    (unless (and (eq (syntax-node-kind child) :list)
+                 (= (length (syntax-node-children child)) 2))
+      (source-syntax-error path line
+                           "complex reader dispatch requires two data forms ~A" value))
+    (when (some (lambda (component)
+                  (eq (real-status component) :not-real))
+                (syntax-node-children child))
+      (source-syntax-error path line
+                           "complex reader dispatch requires real components ~A" value))) (#\P
+    (unless (eq (syntax-node-kind child) :string)
+      (source-syntax-error path line
+                           "pathname reader dispatch requires a string ~A" value))) (#\S
+    (unless (eq (syntax-node-kind child) :list)
+      (source-syntax-error path line
+                           "structure reader dispatch requires a list ~A" value))
+    (let ((children (syntax-node-children child)))
+      (unless (and children
+                   (not (eq (symbol-status (first children)) :not-symbol)))
+        (source-syntax-error path line
+                             "structure reader dispatch requires a symbol name ~A" value))
+      (unless (evenp (1- (length children)))
+        (source-syntax-error path line
+                             "structure reader dispatch requires a name and slot/value pairs ~A"
+                             value))
+      (loop for slots on (rest children) by #'cddr
+            when (eq (slot-status (first slots)) :invalid)
+              do (source-syntax-error path line
+                                      "structure reader dispatch requires string-designator slot names ~A"
+                                      value))))
+)
+)
+                      (make-syntax-node :kind :literal :value value
+                                        :children (list child) :line line)))
+                   (:label-definition
+                     (let ((label (lexeme-text token)))
+                       (when (gethash label defined-labels)
+                         (source-syntax-error path line "duplicate reader label #~A=" label))
+                       (loop while (and remaining
+                                        (eq (lexeme-kind (first remaining)) :discard))
+                             do (parse-one))
+                       (unless remaining
+                         (source-syntax-error path line "missing form after reader label #~A=" label))
+                       (when (and (eq (lexeme-kind (first remaining)) :label-reference)
+                                  (string= label (lexeme-text (first remaining))))
+                         (source-syntax-error path line
+                                              "reader label reference cannot be the labeled object #~A#"
+                                              label))
+                       (setf (gethash label defined-labels) t)
+                       (make-syntax-node
+                        :kind :prefix :value (concatenate (quote string) "#" label "=")
+                        :children (list (parse-one)) :line line)))
+                   (:label-reference
+                    (let ((label (lexeme-text token)))
+                      (unless (gethash label defined-labels)
+                        (source-syntax-error path line "undefined reader label #~A#" label))
+                      (make-syntax-node :kind :literal :value (concatenate 'string "#" label "#")
+                                        :line line)))
                    (:atom
                     (make-syntax-node :kind :atom :value (lexeme-text token) :line line))
                    (:string
                     (make-syntax-node :kind :string :value (lexeme-text token) :line line))
                    (:literal
                     (make-syntax-node :kind :literal :value (lexeme-text token) :line line))
-                   (otherwise (source-syntax-error path line "unsupported token kind ~S" kind)))))
+                   (otherwise
+                    (source-syntax-error path line "unsupported token kind ~S" kind)))))
+             (parse-delimited (token node-kind)
+               (let ((children nil)
+                     (line (lexeme-line token))
+                     (dotted-p nil)
+                     (tail nil))
+                 (loop
+                   (when (null remaining)
+                     (source-syntax-error path line
+                                          (if (eq node-kind :literal)
+                                              "unterminated vector literal"
+                                              "unterminated list")))
+                   (when (eq (lexeme-kind (first remaining)) :close)
+                     (pop remaining)
+                     (return))
+                   (when (and (eq node-kind :list)
+                              (eq (lexeme-kind (first remaining)) :atom)
+                              (string= (lexeme-text (first remaining)) "."))
+                     (let ((dot-line (lexeme-line (pop remaining))))
+                       (unless children
+                         (source-syntax-error path dot-line
+                                              "dotted list requires a preceding object"))
+                       (loop while (and remaining
+                                        (eq (lexeme-kind (first remaining)) :discard))
+                             do (parse-one))
+                       (when (or (null remaining)
+                                 (eq (lexeme-kind (first remaining)) :close))
+                         (source-syntax-error path dot-line
+                                              "dotted list requires one tail object"))
+                       (loop
+                         (let ((child (parse-one)))
+                           (unless (eq (syntax-node-kind child) :discard)
+                             (when (and (eq (syntax-node-kind child) :atom)
+                                        (string= (syntax-node-value child) "."))
+                               (source-syntax-error path dot-line
+                                                    "invalid dotted list tail"))
+                             (setf tail child)
+                             (return))))
+                       (loop while (and remaining
+                                        (eq (lexeme-kind (first remaining)) :discard))
+                             do (parse-one))
+                       (unless (and remaining
+                                    (eq (lexeme-kind (first remaining)) :close))
+                         (source-syntax-error path dot-line
+                                              "dotted list must end after one tail object"))
+                       (pop remaining)
+                       (setf dotted-p t))
+                     (return))
+                   (let ((child (parse-one)))
+                     (unless (eq (syntax-node-kind child) :discard)
+                       (push child children))))
+                 (let* ((children (nreverse children))
+                        (contents (if dotted-p (append children (list tail)) children))
+                        (value (when (eq node-kind :literal) (lexeme-text token)))
+                        (digits (when value
+                                  (subseq value 1 (1- (length value))))))
+                   (when (and digits (plusp (length digits)))
+                     (unless (decimal-token-at-least-p digits (length contents))
+                       (source-syntax-error path line
+                                            "vector literal exceeds declared length ~A"
+                                            value))
+                     (when (and (zerop (length contents))
+                                (not (decimal-token-zero-p digits)))
+                       (source-syntax-error path line
+                                            "nonempty vector literal required for declared length ~A"
+                                            value)))
+                   (make-syntax-node :kind (if dotted-p :dotted-list node-kind)
+                                     :value value :children contents :line line))))
              (parse-list ()
-               (loop while remaining collect (parse-one))))
+               (loop while remaining
+                     collect (progn
+                               (setf defined-labels (make-hash-table :test #'equal))
+                               (parse-one)))))
       (parse-list))))
 (defun reader-name (raw)
   (let ((raw (if (starts-with raw "#:") (subseq raw 2) raw))
@@ -320,8 +971,8 @@
                ((char= character #\\) (setf escaped t))
                ((char= character #\|) (setf in-bars (not in-bars)))
                (in-bars (write-char character output))
-               (t (write-char (char-upcase character) output))))
-    (string-downcase (get-output-stream-string output))))
+               (t (write-char (char-downcase character) output))))
+    (get-output-stream-string output)))
 (defun atom-name (node)
   (when (and node (eq (syntax-node-kind node) :atom))
     (reader-name (syntax-node-value node))))
@@ -348,57 +999,86 @@
 (defun find-forms (forms names)
   (let ((found nil))
     (labels ((walk (node quoted-p)
-               (when (eq (syntax-node-kind node) :list)
-                 (let* ((operator (list-op-name node))
-                        (children (syntax-node-children node)))
-                   (unless (and (not quoted-p) (member operator names :test #'string=))
-                     (unless (or (member operator '("quote" "function") :test #'string=)
-                                 (eq (syntax-node-kind node) :discard))
-                       (dolist (child children) (walk child quoted-p))))
-                   (when (and (not quoted-p) (member operator names :test #'string=))
-                     (push node found))))
-               (when (eq (syntax-node-kind node) :prefix)
-                 (if (member (syntax-node-value node) '("'" "#'") :test #'string=)
-                     (walk (first (syntax-node-children node)) t)
-                     (walk (first (syntax-node-children node)) quoted-p)))
-               (when (eq (syntax-node-kind node) :conditional)
-                 (dolist (child (syntax-node-children node)) (walk child quoted-p))))) (dolist (form forms) (walk form nil))
-    (nreverse found))))
-(defun package-reference-from-atom (raw line)
+               (case (syntax-node-kind node)
+                 (:list
+                  (let* ((operator (list-op-name node))
+                         (children (syntax-node-children node)))
+                    (unless (or (member operator (list "quote" "function") :test (function string=))
+                                (eq (syntax-node-kind node) :discard))
+                      (dolist (child children)
+                        (walk child quoted-p)))
+                    (when (and (not quoted-p) (member operator names :test (function string=)))
+                      (push node found))))
+                 (:dotted-list
+                  (dolist (child (syntax-node-children node))
+                    (walk child quoted-p)))
+                 (:prefix
+                  (if (member (syntax-node-value node) '("'" "#'") :test #'string=)
+                      (walk (first (syntax-node-children node)) t)
+                      (walk (first (syntax-node-children node)) quoted-p)))
+                 (:conditional
+                  (when (second (syntax-node-children node))
+                    (walk (second (syntax-node-children node)) quoted-p))))))
+      (dolist (form forms) (walk form nil))
+      (nreverse found))))
+(defun package-reference-from-atom (raw path line)
   (let ((in-bars nil)
         (escaped nil)
-        (separator nil))
-    (loop for index from 0 below (length raw)
+        (separators nil)
+        (uninterned-p (starts-with raw "#:")))
+    (loop for index from (if uninterned-p 2 0) below (length raw)
           for character = (char raw index)
           do (cond
                (escaped (setf escaped nil))
                ((char= character #\\) (setf escaped t))
                ((char= character #\|) (setf in-bars (not in-bars)))
                ((and (not in-bars) (char= character #\:))
-                (setf separator index)
-                (return))))
-    (when (and separator (> separator 0))
-      (let* ((double-p (and (< (1+ separator) (length raw))
-                            (char= (char raw (1+ separator)) #\:)))
-             (symbol-start (+ separator (if double-p 2 1)))
-             (package (reader-name (subseq raw 0 separator)))
-             (symbol (reader-name (subseq raw symbol-start))))
-        (unless (or (starts-with raw ":") (starts-with raw "#:")
-                    (string= package ""))
-          (make-package-reference :package package :symbol symbol
-                                 :internal-p double-p :line line))))))
-(defun package-references-in-node (node)
+                (push index separators))))
+    (setf separators (nreverse separators))
+    (cond
+      (uninterned-p
+       (when separators
+         (source-syntax-error path line
+                              "uninterned symbol must not contain a package marker ~A"
+                              raw)))
+      ((null separators) nil)
+      ((and (= (length separators) 1)
+            (= (first separators) 0))
+       (when (= (length raw) 1)
+         (source-syntax-error path line "malformed package marker pattern ~A" raw)))
+      ((and (= (length separators) 1)
+            (> (first separators) 0)
+            (< (first separators) (1- (length raw))))
+       (let ((separator (first separators)))
+         (make-package-reference :package (reader-name (subseq raw 0 separator))
+                                 :symbol (reader-name (subseq raw (1+ separator)))
+                                 :internal-p nil :line line)))
+      ((and (= (length separators) 2)
+            (> (first separators) 0)
+            (= (second separators) (1+ (first separators)))
+            (< (second separators) (1- (length raw))))
+       (let ((symbol-start (1+ (second separators))))
+         (make-package-reference :package (reader-name (subseq raw 0 (first separators)))
+                                 :symbol (reader-name (subseq raw symbol-start))
+                                 :internal-p t :line line)))
+      (t
+       (source-syntax-error path line "malformed package marker pattern ~A" raw)))))
+(defun package-references-in-node (node path)
   (let ((references nil))
     (labels ((walk (current)
                (case (syntax-node-kind current)
                  (:atom
                   (let ((reference (package-reference-from-atom
                                     (syntax-node-value current)
+                                    path
                                     (syntax-node-line current))))
                     (when reference (push reference references))))
-                 (:list (dolist (child (syntax-node-children current)) (walk child)))
+                 ((:list :dotted-list)
+                  (dolist (child (syntax-node-children current)) (walk child)))
                  (:prefix (walk (first (syntax-node-children current))))
-                 (:conditional (dolist (child (syntax-node-children current)) (walk child)))
+                 (:conditional
+                  (when (second (syntax-node-children current))
+                    (walk (second (syntax-node-children current)))))
                  (:discard nil)
                  (otherwise nil))))
       (walk node))
@@ -1059,7 +1739,7 @@
                                       (package-info-name source-info) symbol owner-package)))))))))
           ((package-prefix-p used prefix)
            (violation "03" "unknown package ~A imported by ~A in ~A"
-                      used (package-info-name source-info) path))))))) (dolist (reference (package-references-in-node form))
+                      used (package-info-name source-info) path))))))) (dolist (reference (package-references-in-node form path))
     (let* ((target-package (package-reference-package reference))
            (target-info (gethash target-package package-records))
            (target-feature nil)
