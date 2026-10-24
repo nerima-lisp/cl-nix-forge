@@ -328,7 +328,11 @@
          (let ((*read-eval* nil))
            (string-downcase (read-from-string (syntax-node-value node))))
        (error () (fail-closed "invalid string literal at line ~D" (syntax-node-line node)))))
-    (:atom (reader-name (syntax-node-value node)))
+    (:atom
+     (let ((name (reader-name (syntax-node-value node))))
+       (if (starts-with name ":")
+           (subseq name 1)
+           name)))
     (otherwise nil))) (defun list-op-name (node)
   (when (and (eq (syntax-node-kind node) :list) (syntax-node-children node))
     (atom-name (first (syntax-node-children node))))) (defun keyword-name (node)
@@ -441,7 +445,7 @@
                                  (list (feature-test-dir feature))))
         (when (path-under-p path (normalize-path-string directory))
           (push (cons (length directory) feature) matches))))
-    (when matches (cdr (car (sort matches #'> :key #'car)))))) (defun package-layer (package-info)
+    (when matches (cdr (car (sort matches #'> :key #'car)))))) (defun feature-test-package (feature) (concatenate 'string (feature-domain-package feature) "/test")) (defun package-layer (package-info)
   (and package-info (package-info-layer package-info))) (defun report-main (status)
   (dolist (message (nreverse *violations*))
     (format *error-output* "~A~%" message))
@@ -596,7 +600,9 @@
               (when (lisp-file-p file)
                 (let ((relative (relative-pathname root file)))
                   (unless (assoc relative file-paths :test #'string=)
-                    (push (cons relative feature) file-paths))))))))) (setf file-paths (nreverse file-paths)) (dolist (record file-paths)
+                    (push (cons relative feature) file-paths)))))))))
+    (setf file-paths (nreverse file-paths))
+    (dolist (record file-paths)
       (let* ((relative (car record))
              (feature (cdr record))
              (path (resolve-path root relative))
@@ -613,19 +619,60 @@
             (unless package
               (source-syntax-error relative (syntax-node-line form)
                                    "defpackage has no literal package name"))
-            (push package declared-names)
-            (let ((existing (gethash package packages)))
-              (when existing
-                (violation "01" "package ~A is declared more than once (~A and ~A)"
-                           package (package-info-file existing) relative))
-              (let ((record (make-package-info :name package :file relative
-                                               :exports nil :interns nil
-                                               :imports nil :uses nil)))
-                (setf (gethash package packages) record)
-                (parse-defpackage-options form record)))))
+            (push (register-package-form form relative packages package) declared-names)))
         (push (list :path relative :feature feature :forms forms
                     :packages (nreverse declared-names) :in-packages ins)
-              records))) (values (nreverse records) packages source-files))) (defun parse-defpackage-options (form package-record)
+              records)))
+    (let* ((feature-paths
+             (loop for feature in features
+                   append (append (feature-source-dirs feature)
+                                  (list (feature-test-dir feature)))))
+           (facade-packages
+             (remove-duplicates
+              (loop for feature in features append (feature-facade-packages feature))
+              :test #'string=))
+           (source-roots
+             (remove-duplicates
+              (remove "" (mapcar #'path-parent
+                                 (loop for feature in features
+                                       append (feature-source-dirs feature)))
+                      :test #'string=)
+              :test #'string=))
+           (owned-paths (mapcar #'car file-paths))
+           (facade-files nil))
+      (dolist (source-root source-roots)
+        (let ((directory (resolve-path root source-root)))
+          (when (uiop:directory-exists-p directory)
+            (dolist (file (recursive-files directory))
+              (when (lisp-file-p file)
+                (let ((relative (relative-pathname root file)))
+                  (unless (or
+                              (not (string= (path-parent relative) source-root))
+                              (not (member (path-base relative)
+                                   '("package.lisp" "packages.lisp")
+                                   :test #'string=))
+                              (member relative owned-paths :test #'string=)
+                              (some (lambda (feature-path)
+                                      (path-under-p relative feature-path))
+                                    feature-paths)
+                              (member relative facade-files :test #'string=))
+                    (push relative facade-files))))))))
+      (dolist (relative (nreverse facade-files))
+        (let* ((path (resolve-path root relative))
+               (forms (handler-case
+                          (parse-source-tokens (scan-source (uiop:read-file-string path) relative) relative)
+                        (error (condition)
+                          (fail-closed "source syntax error: ~A" condition))))
+               (defs (find-forms forms '("defpackage"))))
+          (dolist (form defs)
+            (let* ((children (syntax-node-children form))
+                   (package (and (second children) (node-designator (second children)))))
+              (unless package
+                (source-syntax-error relative (syntax-node-line form)
+                                     "defpackage has no literal package name"))
+              (when (member package facade-packages :test #'string=)
+                (register-package-form form relative packages package)))))))
+    (values (nreverse records) packages source-files))) (defun parse-defpackage-options (form package-record)
   (let ((children (cddr (syntax-node-children form))))
     (dolist (option children)
       (unless (eq (syntax-node-kind option) :list)
@@ -663,7 +710,17 @@
           ((member key '(":shadow" ":nicknames" ":size" ":documentation") :test #'string=)
            nil)
           (t (source-syntax-error "source" (syntax-node-line option)
-                                  "unsupported defpackage option ~S" key))))))) (defun package-prefix-p (name prefix)
+                                  "unsupported defpackage option ~S" key))))))) (defun register-package-form (form relative packages package)
+  (let ((existing (gethash package packages)))
+    (when existing
+      (violation "01" "package ~A is declared more than once (~A and ~A)"
+                 package (package-info-file existing) relative))
+    (let ((record (make-package-info :name package :file relative
+                                     :exports nil :interns nil
+                                     :imports nil :uses nil)))
+      (setf (gethash package packages) record)
+      (parse-defpackage-options form record)))
+  package) (defun package-prefix-p (name prefix)
   (starts-with name prefix)) (defun package-owner-from-prefix (name prefix features infra-suffix)
   (when (package-prefix-p name prefix)
     (let ((tail (subseq name (length prefix))))
@@ -745,9 +802,11 @@
       (when (gethash (feature-slug feature) feature-by-slug)
         (violation "01" "feature ~A is declared more than once" (feature-slug feature)))
       (setf (gethash (feature-slug feature) feature-by-slug) feature)
-      (dolist (package (append (list (feature-domain-package feature))
-                               (when (feature-infra-package feature)
-                                 (list (feature-infra-package feature)))))
+      (dolist (package (append
+                       (list (feature-domain-package feature)
+                             (feature-test-package feature))
+                       (when (feature-infra-package feature)
+                         (list (feature-infra-package feature)))))
         (when (gethash package expected-packages)
           (violation "01" "package ~A is assigned to multiple features" package))
         (setf (gethash package expected-packages) feature))
@@ -792,9 +851,17 @@
                    (cond
                      ((gethash name expected-packages)
                       (let ((expected (gethash name expected-packages)))
-                        (unless (some (lambda (directory) (path-under-p file directory))
-                      (feature-source-dirs expected))
-  (violation "01" "package ~A is declared outside its feature source directories" name))))
+                        (if (string= name (feature-test-package expected))
+                            (unless (path-under-p file (feature-test-dir expected))
+                              (violation "01"
+                                         "test package ~A is declared outside its feature test directory"
+                                         name))
+                            (unless (some (lambda (directory)
+                                           (path-under-p file directory))
+                                         (feature-source-dirs expected))
+                              (violation "01"
+                                         "package ~A is declared outside its feature source directories"
+                                         name)))))
                      ((member name expected-facades :test #'string=) nil)
                      ((and file-feature (package-prefix-p name prefix))
                       (violation "01" "undeclared feature package ~A in ~A" name file))
@@ -836,9 +903,13 @@
                    (feature
                     (setf (package-info-feature package-record) (feature-slug feature)
                           (package-info-layer package-record)
-                          (if (and (feature-infra-package feature)
-                                   (string= name (feature-infra-package feature)))
-                              "infra" "domain")))
+                          (cond
+                            ((string= name (feature-test-package feature))
+                             "test")
+                            ((and (feature-infra-package feature)
+                                 (string= name (feature-infra-package feature)))
+                             "infra")
+                            (t "domain"))))
                    ((member name facades :test #'string=)
                     (setf (package-info-layer package-record) "facade"))
                    (t
