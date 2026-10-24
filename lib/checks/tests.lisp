@@ -112,7 +112,7 @@
         (multiple-value-bind (status stdout stderr timed-out-p)
             (run-checker script arguments)
           (setf exit-code status
-                combined-output (concatenate (quote string) stdout stderr)
+                combined-output (concatenate 'string stdout stderr)
                 failure-detail
                 (when timed-out-p
                   (format nil "checker timed out after ~D seconds"
