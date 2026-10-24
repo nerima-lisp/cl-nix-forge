@@ -18,7 +18,7 @@
 
 (defun starts-with (string prefix)
   (and (<= (length prefix) (length string))
-       (string= string prefix :end2 (length prefix))))
+       (string= string prefix :end1 (length prefix))))
 
 (defun ends-with (string suffix)
   (and (<= (length suffix) (length string))
