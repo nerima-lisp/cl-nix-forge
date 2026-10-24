@@ -212,7 +212,7 @@ in
       name ? "feature-lint",
     }:
     let
-      sourceRoot = toString src;
+      sourceRoot = "${src}";
       arguments = [
         "--source-root"
         sourceRoot
@@ -273,7 +273,7 @@ in
       name ? "orphan-tests",
     }:
     let
-      sourceRoot = toString src;
+      sourceRoot = "${src}";
       arguments = [ "--source-root" sourceRoot ]
       ++ lib.concatMap (value: [ "--test-root" value ]) testRoots
       ++ lib.concatMap (value: [ "--test-system" value ]) testSystems

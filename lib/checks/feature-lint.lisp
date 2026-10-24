@@ -391,9 +391,11 @@
                     (when reference (push reference references))))
                  (:list (dolist (child (syntax-node-children current)) (walk child)))
                  (:prefix (walk (first (syntax-node-children current))))
-                 (:conditional (dolist (child (syntax-node-children current)) (walk child))) (:discard nil) (otherwise nil)))
+                 (:conditional (dolist (child (syntax-node-children current)) (walk child)))
+                 (:discard nil)
+                 (otherwise nil))))
       (walk node))
-    (nreverse references)))) (defun path-under-p (file directory)
+    (nreverse references))) (defun path-under-p (file directory)
   (or (string= file directory)
       (and (starts-with file directory)
            (< (length directory) (length file))
@@ -418,27 +420,27 @@
             (member (string-downcase candidate) parts :test #'string=))
           forbidden))) (defun numbered-name-p (name prefixes)
   (let ((down (string-downcase name)))
-    (some (lambda (prefix)
-            (let ((prefix (string-downcase prefix))
-                  (start 0))
-              (loop for index = (search prefix down :start2 start)
-                    while index
-                    for previous = (when (> index 0) (char down (1- index)))
-                    for digit-start = (+ index (length prefix))
-                    for after-digits = (loop for cursor from digit-start below (length down)
-                                             while (ascii-digit-p (char down cursor))
-                                             finally (return cursor))
-                    for next = (when (< after-digits (length down))
-                                 (char down after-digits))
-                    do (when (and (or (null previous)
-                                      (not (or (alphanumericp previous) (char= previous #\_))))
-                                  (> after-digits digit-start)
-                                  (or (null next)
-                                      (not (or (alphanumericp next) (char= next #\_)))))
-                         (return-from numbered-name-p t))
-                       (setf start (1+ index))))
-              nil))
-          prefixes)) (defun feature-for-path (path features)
+    (some
+     (lambda (prefix)
+       (let ((prefix (string-downcase prefix))
+             (start 0))
+         (loop for index = (search prefix down :start2 start)
+               while index
+               for previous = (when (> index 0) (char down (1- index)))
+               for digit-start = (+ index (length prefix))
+               for after-digits = (loop for cursor from digit-start below (length down)
+                                        while (ascii-digit-p (char down cursor))
+                                        finally (return cursor))
+               for next = (when (< after-digits (length down))
+                            (char down after-digits))
+               do (when (and (or (null previous)
+                                 (not (or (alphanumericp previous) (char= previous #\_))))
+                             (> after-digits digit-start)
+                             (or (null next)
+                                 (not (or (alphanumericp next) (char= next #\_)))))
+                    (return-from numbered-name-p t))
+                  (setf start (1+ index)))))
+     prefixes))) (defun feature-for-path (path features)
   (let ((matches nil))
     (dolist (feature features)
       (dolist (directory (append (feature-source-dirs feature)
@@ -872,138 +874,140 @@
                                      "in-package needs a literal package name"))
               (setf current-package designator)))
           (let* ((source-info (and current-package (gethash current-package package-records)))
-                 (source-feature (or (and source-info (package-info-feature source-info))
-                                     (and feature (feature-slug feature)))))
-            (when (and (eq (syntax-node-kind form) :list)
-                       (string= (or (list-op-name form) "") "defpackage"))
-              (let* ((package-name (node-designator (second (syntax-node-children form))))
-                     (defined (and package-name (gethash package-name package-records))))
-                (when defined
-                  (when (and (package-info-feature defined)
-                             (not (string= (package-info-feature defined) source-feature)))
-                    (violation "01" "package ~A is declared from the wrong feature file ~A"
-                               package-name path))
-                  (setf source-info defined
-                        source-feature (package-info-feature defined))))
-              ;; Every observed package edge must be declared; same-feature edges are
-    ;; local package relationships and are checked separately for the infra rule.
-    ;; The glossary's named package and APIs are compared to both static
-    ;; DEFPACKAGE declarations and the checked-in export-surface snapshot.
-) (when source-info
-                (dolist (used (package-info-uses source-info))
-                  (let ((target (gethash used package-records)))
-                    (cond
-                      (target
-                       (push (make-graph-edge :from source-feature
-                                              :to (package-info-feature target)
-                                              :kind "use" :path path) edges)
-                       (when (and (string= (or (package-info-layer source-info) "") "domain")
-                                  (string= (or (package-info-layer target) "") "infra"))
-                         (violation "06" "domain package ~A uses infra package ~A in ~A"
-                                    (package-info-name source-info) used path)))
-                      ((member used facades :test #'string=)
-                       (dolist (owner-package
-                                (package-owners-through-facade used "" package-records prefix facades))
-                         (let ((target (gethash owner-package package-records)))
-                           (when target
-                             (push (make-graph-edge :from source-feature
-                                                    :to (package-info-feature target)
-                                                    :kind "facade-use" :path path) edges)
-                             (when (and (string= (or (package-info-layer source-info) "") "domain")
-                                        (string= (or (package-info-layer target) "") "infra"))
-                               (violation "06" "domain package ~A uses facade ~A with infra dependency ~A"
-                                          (package-info-name source-info) used owner-package)))))
-                      ((package-prefix-p used prefix)
-                       (violation "03" "unknown package ~A used by ~A in ~A" used
-                                  (package-info-name source-info) path))))
-                (dolist (import (package-info-imports source-info))
-                  (let* ((used (first import))
-                         (target (gethash used package-records)))
-                    (cond
-                      (target
-                       (push (make-graph-edge :from source-feature
-                                              :to (package-info-feature target)
-                                              :kind "import-from" :path path) edges)
-                       (when (and (string= (or (package-info-layer source-info) "") "domain")
-                                  (string= (or (package-info-layer target) "") "infra"))
-                         (violation "06" "domain package ~A imports from infra package ~A in ~A"
-                                    (package-info-name source-info) used path)))
-                      ((member used facades :test #'string=)
-                       (dolist (symbol (second import))
-                         (let ((owners (package-owners-through-facade used symbol package-records prefix facades)))
-                           (if (null owners)
-                               (violation "04" "facade ~A does not resolve imported symbol ~A in ~A"
-                                          used symbol path)
-                               (dolist (owner-package owners)
-                                 (let ((target (gethash owner-package package-records)))
-                                   (when target
-                                     (push (make-graph-edge :from source-feature
-                                                            :to (package-info-feature target)
-                                                            :kind "facade-import" :path path) edges)
-                                     (when (and (string= (or (package-info-layer source-info) "") "domain")
-                                                (string= (or (package-info-layer target) "") "infra"))
-                                       (violation "06" "domain package ~A imports facade symbol ~A from infra package ~A"
-                                                  (package-info-name source-info) symbol owner-package))))))))
-                      ((package-prefix-p used prefix)
-                       (violation "03" "unknown package ~A imported by ~A in ~A" used
-                                  (package-info-name source-info) path))))))))
-            (dolist (reference (package-references-in-node form))
-              (let* ((target-package (package-reference-package reference))
-                     (target-info (gethash target-package package-records))
-                     (target-feature nil)
-                     (resolved-package target-package))
-                (when (package-prefix-p target-package prefix)
-                  (cond
-                    (target-info
-                     (if (member target-package facades :test #'string=)
-                         (let ((owners (package-owners-through-facade
-                                        target-package (package-reference-symbol reference)
-                                        package-records prefix facades)))
-                           (cond
-                             ((null owners)
-                              (violation "04" "facade reference ~A~A~A has no imported feature owner in ~A"
-                                         target-package
-                                         (if (package-reference-internal-p reference) "::" ":")
-                                         (package-reference-symbol reference) path))
-                             ((/= (length owners) 1)
-                              (violation "04" "facade reference ~A::~A resolves to multiple feature packages in ~A"
-                                         target-package (package-reference-symbol reference) path))
-                             (t (setf resolved-package (first owners)
-                                      target-feature (package-info-feature
-                                                      (gethash resolved-package package-records))))
-                             (when (and (not (package-reference-internal-p reference))
-                                        (not (member (package-reference-symbol reference)
-                                                     (package-info-exports target-info) :test #'string=)))
-                               (violation "04" "facade package ~A does not export ~A in ~A"
-                                          target-package (package-reference-symbol reference) path))))
-                         (setf target-feature (package-info-feature target-info)))
-                     (unless (or target-feature (member target-package facades :test #'string=))
-                       (violation "03" "package ~A has no feature owner in ~A" target-package path)))
-                    (t (violation "03" "unknown feature package ~A referenced in ~A"
-                                  target-package path)))
-                  (when (and target-feature source-feature
-                             (not (string= target-feature source-feature)))
-                    (push (make-graph-edge :from source-feature :to target-feature
-                                           :kind "reference" :path path) edges))
-                  (let ((actual-target (gethash resolved-package package-records)))
-                    (when (and source-info actual-target
-                               (string= (or (package-info-layer source-info) "") "domain")
-                               (string= (or (package-info-layer actual-target) "") "infra"))
-                      (violation "06" "domain package ~A references infra package ~A in ~A"
-                                 (package-info-name source-info) resolved-package path)))
-                  (when (and target-feature source-feature
-                             (not (string= target-feature source-feature))
-                             (package-reference-internal-p reference))
-                    (let* ((symbol (package-reference-symbol reference))
-                           (key (list (normalize-path-string path) target-package symbol))
-                           (allowed-count (gethash key legacy)))
-                      (if (and (string= mode "transition")
-                               (member target-package facades :test #'string=)
-                               allowed-count
-                               (< (gethash key actual-legacy 0) allowed-count))
-                          (incf (gethash key actual-legacy 0))
-                          (violation "05" "cross-feature internal reference ~A::~A from feature ~A in ~A"
-                                     target-package symbol source-feature path)))))))) )))) (when (and (string= mode "strict") (> (hash-table-count legacy) 0))
+       (source-feature (or (and source-info (package-info-feature source-info))
+                           (and feature (feature-slug feature)))))
+  (when (and (eq (syntax-node-kind form) :list)
+             (string= (or (list-op-name form) "") "defpackage"))
+    (let* ((package-name (node-designator (second (syntax-node-children form))))
+           (defined (and package-name (gethash package-name package-records))))
+      (when defined
+        (when (and (package-info-feature defined)
+                   (not (string= (package-info-feature defined) source-feature)))
+          (violation "01" "package ~A is declared from the wrong feature file ~A"
+                     package-name path))
+        (setf source-info defined
+              source-feature (package-info-feature defined))))
+  ;; Every observed package edge must be declared; same-feature edges are
+  ;; local package relationships and are checked separately for the infra rule.
+  ;; The glossary's named package and APIs are compared to both static
+  ;; DEFPACKAGE declarations and the checked-in export-surface snapshot.
+  (when source-info
+    (dolist (used (package-info-uses source-info))
+      (let ((target (gethash used package-records)))
+        (cond
+          (target
+           (push (make-graph-edge :from source-feature
+                                  :to (package-info-feature target)
+                                  :kind "use" :path path) edges)
+           (when (and (string= (or (package-info-layer source-info) "") "domain")
+                      (string= (or (package-info-layer target) "") "infra"))
+             (violation "06" "domain package ~A uses infra package ~A in ~A"
+                        (package-info-name source-info) used path)))
+          ((member used facades :test #'string=)
+           (dolist (owner-package
+                    (package-owners-through-facade used "" package-records prefix facades))
+             (let ((target (gethash owner-package package-records)))
+               (when target
+                 (push (make-graph-edge :from source-feature
+                                        :to (package-info-feature target)
+                                        :kind "facade-use" :path path) edges)
+                 (when (and (string= (or (package-info-layer source-info) "") "domain")
+                            (string= (or (package-info-layer target) "") "infra"))
+                   (violation "06" "domain package ~A uses facade ~A with infra dependency ~A"
+                              (package-info-name source-info) used owner-package))))))
+          ((package-prefix-p used prefix)
+           (violation "03" "unknown package ~A used by ~A in ~A"
+                      used (package-info-name source-info) path)))))
+    (dolist (import (package-info-imports source-info))
+      (let* ((used (first import))
+             (target (gethash used package-records)))
+        (cond
+          (target
+           (push (make-graph-edge :from source-feature
+                                  :to (package-info-feature target)
+                                  :kind "import-from" :path path) edges)
+           (when (and (string= (or (package-info-layer source-info) "") "domain")
+                      (string= (or (package-info-layer target) "") "infra"))
+             (violation "06" "domain package ~A imports from infra package ~A in ~A"
+                        (package-info-name source-info) used path)))
+          ((member used facades :test #'string=)
+           (dolist (symbol (second import))
+             (let ((owners (package-owners-through-facade used symbol package-records prefix facades)))
+               (if (null owners)
+                   (violation "04" "facade ~A does not resolve imported symbol ~A in ~A"
+                              used symbol path)
+                   (dolist (owner-package owners)
+                     (let ((target (gethash owner-package package-records)))
+                       (when target
+                         (push (make-graph-edge :from source-feature
+                                                :to (package-info-feature target)
+                                                :kind "facade-import" :path path) edges)
+                         (when (and (string= (or (package-info-layer source-info) "") "domain")
+                                    (string= (or (package-info-layer target) "") "infra"))
+                           (violation "06" "domain package ~A imports facade symbol ~A from infra package ~A"
+                                      (package-info-name source-info) symbol owner-package)))))))))
+          ((package-prefix-p used prefix)
+           (violation "03" "unknown package ~A imported by ~A in ~A"
+                      used (package-info-name source-info) path))))))
+  (dolist (reference (package-references-in-node form))
+    (let* ((target-package (package-reference-package reference))
+           (target-info (gethash target-package package-records))
+           (target-feature nil)
+           (resolved-package target-package))
+      (when (package-prefix-p target-package prefix)
+        (cond
+          (target-info
+           (if (member target-package facades :test #'string=)
+               (let ((owners (package-owners-through-facade
+                              target-package (package-reference-symbol reference)
+                              package-records prefix facades)))
+                 (cond
+                   ((null owners)
+                    (violation "04" "facade reference ~A~A~A has no imported feature owner in ~A"
+                               target-package
+                               (if (package-reference-internal-p reference) "::" ":")
+                               (package-reference-symbol reference) path))
+                   ((/= (length owners) 1)
+                    (violation "04" "facade reference ~A::~A resolves to multiple feature packages in ~A"
+                               target-package (package-reference-symbol reference) path))
+                   (t
+                    (setf resolved-package (first owners)
+                          target-feature (package-info-feature
+                                          (gethash resolved-package package-records)))))
+                 (when (and (not (package-reference-internal-p reference))
+                            (not (member (package-reference-symbol reference)
+                                         (package-info-exports target-info) :test #'string=)))
+                   (violation "04" "facade package ~A does not export ~A in ~A"
+                              target-package (package-reference-symbol reference) path)))
+               (setf target-feature (package-info-feature target-info)))
+           (unless (or target-feature (member target-package facades :test #'string=))
+             (violation "03" "package ~A has no feature owner in ~A" target-package path)))
+          (t
+           (violation "03" "unknown feature package ~A referenced in ~A"
+                      target-package path)))
+        (when (and target-feature source-feature
+                   (not (string= target-feature source-feature)))
+          (push (make-graph-edge :from source-feature :to target-feature
+                                 :kind "reference" :path path) edges))
+        (let ((actual-target (gethash resolved-package package-records)))
+          (when (and source-info actual-target
+                     (string= (or (package-info-layer source-info) "") "domain")
+                     (string= (or (package-info-layer actual-target) "") "infra"))
+            (violation "06" "domain package ~A references infra package ~A in ~A"
+                       (package-info-name source-info) resolved-package path)))
+        (when (and target-feature source-feature
+                   (not (string= target-feature source-feature))
+                   (package-reference-internal-p reference))
+          (let* ((symbol (package-reference-symbol reference))
+                 (key (list (normalize-path-string path) target-package symbol))
+                 (allowed-count (gethash key legacy)))
+            (if (and (string= mode "transition")
+                     (member target-package facades :test #'string=)
+                     allowed-count
+                     (< (gethash key actual-legacy 0) allowed-count))
+                (incf (gethash key actual-legacy 0))
+                (violation "05" "cross-feature internal reference ~A::~A from feature ~A in ~A"
+                           target-package symbol source-feature path)))))))))))) (when (and (string= mode "strict") (> (hash-table-count legacy) 0))
       (violation "05" "strict mode requires an empty legacy internal reference allowlist")) (dolist (edge edges)
       (when (and (graph-edge-from edge) (graph-edge-to edge)
                  (not (string= (graph-edge-from edge) (graph-edge-to edge))))
@@ -1030,30 +1034,33 @@
                     (setf (gethash slug state) :done)))))
         (dolist (feature features) (visit (feature-slug feature))))) (dolist (feature features)
       (let* ((slug (feature-slug feature))
-             (entry (gethash slug glossary))
-             (package-value (and entry (gethash "Package" entry)))
-             (package-name (and package-value
-                                (normalize-name (markdown-value package-value))))
-             (api-names (append (when entry (glossary-api-values (or (gethash "Key types" entry) ""))
-                                (when entry (glossary-api-values (or (gethash "Key functions" entry) "")))))
-             (package-record (gethash (feature-domain-package feature) package-records))
-             (snapshot (gethash (feature-domain-package feature) exports)))
-        (when (and entry (not package-value))
-          (violation "01" "glossary entry ~A has no Package field" slug))
-        (when (and package-name (not (string= package-name (feature-domain-package feature))))
-          (violation "01" "glossary feature ~A names package ~A, expected ~A"
-                     slug package-name (feature-domain-package feature)))
-        (when (and entry (not (gethash "Key types" entry)))
-          (violation "07" "glossary entry ~A has no Key types field" slug))
-        (when (and entry (not (gethash "Key functions" entry)))
-          (violation "07" "glossary entry ~A has no Key functions field" slug))
-        (dolist (api api-names)
-          (let ((api (normalize-name api)))
-            (unless (and package-record
-             (member api (package-info-exports package-record) :test #'string=)
-             (member api snapshot :test #'string=))
-  (violation "07" "glossary API ~A must appear in both package exports and the export-surface snapshot for ~A"
-             api (feature-domain-package feature)))))))) (if *violations*
+       (entry (gethash slug glossary))
+       (package-value (and entry (gethash "Package" entry)))
+       (package-name (and package-value
+                          (normalize-name (markdown-value package-value))))
+       (api-names (append
+                   (when entry
+                     (glossary-api-values (or (gethash "Key types" entry) "")))
+                   (when entry
+                     (glossary-api-values (or (gethash "Key functions" entry) "")))))
+       (package-record (gethash (feature-domain-package feature) package-records))
+       (snapshot (gethash (feature-domain-package feature) exports)))
+  (when (and entry (not package-value))
+    (violation "01" "glossary entry ~A has no Package field" slug))
+  (when (and package-name (not (string= package-name (feature-domain-package feature))))
+    (violation "01" "glossary feature ~A names package ~A, expected ~A"
+               slug package-name (feature-domain-package feature)))
+  (when (and entry (not (gethash "Key types" entry)))
+    (violation "07" "glossary entry ~A has no Key types field" slug))
+  (when (and entry (not (gethash "Key functions" entry)))
+    (violation "07" "glossary entry ~A has no Key functions field" slug))
+  (dolist (api api-names)
+    (let ((api (normalize-name api)))
+      (unless (and package-record
+                   (member api (package-info-exports package-record) :test #'string=)
+                   (member api snapshot :test #'string=))
+        (violation "07" "glossary API ~A must appear in both package exports and the export-surface snapshot for ~A"
+                   api (feature-domain-package feature))))))) (if *violations*
         (report-main 1)
         (progn
           (format t "FEATURE-LINT PASS: ~D feature(s), checks 1-7~%" (length features))
