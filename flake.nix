@@ -107,20 +107,22 @@
             lib = pkgs.lib;
           };
         in
-        pkgs.runCommand "static-checker-contract" {
-          nativeBuildInputs = checkRuntime.packages ++ [ pkgs.sbcl ];
-        } ''
-          ${checkRuntime.isolateHome}
-          ${checkRuntime.withTimeLimit {
-            label = "static-checker-contract";
-            command = nixpkgs.lib.escapeShellArgs [
-              "${pkgs.sbcl}/bin/sbcl"
-              "--script"
-              "${./.}/lib/checks/tests.lisp"
-            ];
-          }}
-          touch "$out"
-        '';
+        pkgs.runCommand "static-checker-contract"
+          {
+            nativeBuildInputs = checkRuntime.packages ++ [ pkgs.sbcl ];
+          }
+          ''
+            ${checkRuntime.isolateHome}
+            ${checkRuntime.withTimeLimit {
+              label = "static-checker-contract";
+              command = nixpkgs.lib.escapeShellArgs [
+                "${pkgs.sbcl}/bin/sbcl"
+                "--script"
+                "${./.}/lib/checks/tests.lisp"
+              ];
+            }}
+            touch "$out"
+          '';
 
       # docs/src/reference/api.md and lib/default.nix are supposed to name the
       # same attributes. Until this check nothing held them to it, and the gap
@@ -180,15 +182,26 @@
             exportSurface = "t/export-surface.txt";
             mode = "strict";
             legacyInternalRefs = "t/legacy-internal-refs.sexp";
-            forbiddenNames = [ "phases" "misc" "utils" "helpers" ];
-            numberedPrefixes = [ "FR-" "W" ];
+            forbiddenNames = [
+              "phases"
+              "misc"
+              "utils"
+              "helpers"
+            ];
+            numberedPrefixes = [
+              "FR-"
+              "W"
+            ];
             packagePrefix = "fixture/valid/";
             infraSuffix = "/infra";
           };
           orphanTestsBuilderContract = cl.mkOrphanTestCheck {
             src = ./lib/checks/fixtures/orphan-tests/multi-system-nested;
             testRoots = [ "t" ];
-            testSystems = [ "forge-tests/alpha" "forge-tests/beta" ];
+            testSystems = [
+              "forge-tests/alpha"
+              "forge-tests/beta"
+            ];
           };
 
           # This repository's own test suite. `contributorsFor` says the

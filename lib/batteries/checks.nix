@@ -37,19 +37,25 @@ let
       script,
       arguments,
     }:
-    pkgs.runCommand name {
-      nativeBuildInputs = checkRuntime.packages ++ [ pkgs.sbcl ];
-    } ''
-      ${checkRuntime.isolateHome}
-      ${checkRuntime.withTimeLimit {
-        label = name;
-        command = lib.escapeShellArgs (
-          [ "${pkgs.sbcl}/bin/sbcl" "--script" "${script}" ]
-          ++ arguments
-        );
-      }}
-      touch "$out"
-    '';
+    pkgs.runCommand name
+      {
+        nativeBuildInputs = checkRuntime.packages ++ [ pkgs.sbcl ];
+      }
+      ''
+        ${checkRuntime.isolateHome}
+        ${checkRuntime.withTimeLimit {
+          label = name;
+          command = lib.escapeShellArgs (
+            [
+              "${pkgs.sbcl}/bin/sbcl"
+              "--script"
+              "${script}"
+            ]
+            ++ arguments
+          );
+        }}
+        touch "$out"
+      '';
 in
 {
   # `lispDerivation` already runs `asdf:test-system` inside the very same
@@ -229,14 +235,23 @@ in
         "--legacy-internal-refs"
         legacyInternalRefs
       ]
-      ++ lib.concatMap (value: [ "--forbidden-name" value ]) forbiddenNames
-      ++ lib.concatMap (value: [ "--numbered-prefix" value ]) numberedPrefixes
-      ++ [ "--package-prefix" packagePrefix "--infra-suffix" infraSuffix ];
+      ++ lib.concatMap (value: [
+        "--forbidden-name"
+        value
+      ]) forbiddenNames
+      ++ lib.concatMap (value: [
+        "--numbered-prefix"
+        value
+      ]) numberedPrefixes
+      ++ [
+        "--package-prefix"
+        packagePrefix
+        "--infra-suffix"
+        infraSuffix
+      ];
     in
-    assert lib.assertMsg (
-      (builtins.isPath src || nonEmptyString src)
-      && lib.hasPrefix "/" sourceRoot
-    ) "cl-nix-forge mkFeatureLintCheck (${name}): `src` must be a non-empty path or absolute path string";
+    assert lib.assertMsg ((builtins.isPath src || nonEmptyString src) && lib.hasPrefix "/" sourceRoot)
+      "cl-nix-forge mkFeatureLintCheck (${name}): `src` must be a non-empty path or absolute path string";
     assert lib.assertMsg (relativePath featureDefinitions)
       "cl-nix-forge mkFeatureLintCheck (${name}): `featureDefinitions` must be a non-empty relative path string";
     assert lib.assertMsg (relativePath glossary)
@@ -247,8 +262,10 @@ in
       "cl-nix-forge mkFeatureLintCheck (${name}): `legacyInternalRefs` must be a non-empty relative path string";
     assert lib.assertMsg (nonEmptyString glossaryHeadingPrefix)
       "cl-nix-forge mkFeatureLintCheck (${name}): `glossaryHeadingPrefix` must be a non-empty string";
-    assert lib.assertMsg (builtins.elem mode [ "transition" "strict" ])
-      "cl-nix-forge mkFeatureLintCheck (${name}): `mode` must be `transition` or `strict`";
+    assert lib.assertMsg (builtins.elem mode [
+      "transition"
+      "strict"
+    ]) "cl-nix-forge mkFeatureLintCheck (${name}): `mode` must be `transition` or `strict`";
     assert lib.assertMsg (stringList forbiddenNames)
       "cl-nix-forge mkFeatureLintCheck (${name}): `forbiddenNames` must be a list of non-empty strings";
     assert lib.assertMsg (stringList numberedPrefixes)
@@ -274,15 +291,25 @@ in
     }:
     let
       sourceRoot = "${src}";
-      arguments = [ "--source-root" sourceRoot ]
-      ++ lib.concatMap (value: [ "--test-root" value ]) testRoots
-      ++ lib.concatMap (value: [ "--test-system" value ]) testSystems
-      ++ lib.concatMap (value: [ "--allowlist" value ]) allowlist;
+      arguments = [
+        "--source-root"
+        sourceRoot
+      ]
+      ++ lib.concatMap (value: [
+        "--test-root"
+        value
+      ]) testRoots
+      ++ lib.concatMap (value: [
+        "--test-system"
+        value
+      ]) testSystems
+      ++ lib.concatMap (value: [
+        "--allowlist"
+        value
+      ]) allowlist;
     in
-    assert lib.assertMsg (
-      (builtins.isPath src || nonEmptyString src)
-      && lib.hasPrefix "/" sourceRoot
-    ) "cl-nix-forge mkOrphanTestCheck (${name}): `src` must be a non-empty path or absolute path string";
+    assert lib.assertMsg ((builtins.isPath src || nonEmptyString src) && lib.hasPrefix "/" sourceRoot)
+      "cl-nix-forge mkOrphanTestCheck (${name}): `src` must be a non-empty path or absolute path string";
     assert lib.assertMsg (relativePathList testRoots && testRoots != [ ])
       "cl-nix-forge mkOrphanTestCheck (${name}): `testRoots` must be a non-empty list of relative path strings";
     assert lib.assertMsg (stringList testSystems && testSystems != [ ])
