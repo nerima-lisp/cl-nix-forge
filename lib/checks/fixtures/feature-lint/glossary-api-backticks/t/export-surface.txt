@@ -1,0 +1,10 @@
+((:symbol :keep "fixture/valid/facade" "fixture/valid/nodes"
+  "fixture/valid/nodes" "MAKE-NODE")
+ (:symbol :keep "fixture/valid/facade" "fixture/valid/nodes"
+  "fixture/valid/nodes" "MAKE-TWIG")
+ (:symbol :keep "fixture/valid/facade" "fixture/valid/nodes"
+  "fixture/valid/nodes" "NODE")
+ (:symbol :keep "fixture/valid/facade" "fixture/valid/nodes"
+  "fixture/valid/nodes" "TWIG")
+ (:symbol :keep "fixture/valid/facade" "fixture/valid/nodes"
+  "fixture/valid/nodes" "SAPLING"))
