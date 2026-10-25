@@ -1697,8 +1697,9 @@
          (numbered (mapcar #'normalize-name (many-options options "--numbered-prefix")))
          (features (feature-entries (read-safe-one definitions)))
          (glossary (glossary-fields (uiop:read-file-string glossary-path) heading-prefix))
-         (exports (parse-export-surface root export-path))
-         (legacy (parse-legacy-allowlist root legacy-path))
+         (legacy (progn
+                   (parse-export-surface root export-path)
+                   (parse-legacy-allowlist root legacy-path)))
          (feature-by-slug (make-hash-table :test #'equal))
          (facades nil)
          (expected-packages (make-hash-table :test #'equal))
@@ -2019,8 +2020,7 @@
                      (glossary-list-values (or (gethash "Key types" entry) "")))
                    (when entry
                      (glossary-list-values (or (gethash "Key functions" entry) "")))))
-       (package-record (gethash (feature-domain-package feature) package-records))
-       (snapshot (gethash (feature-domain-package feature) exports)))
+       (package-record (gethash (feature-domain-package feature) package-records)))
   (when (and entry (not package-value))
     (violation "01" "glossary entry ~A has no Package field" slug))
   (let ((declared-packages
@@ -2049,9 +2049,10 @@
   (dolist (api api-names)
     (let ((api (normalize-name api)))
       (unless (and package-record
-                   (member api (package-info-exports package-record) :test #'string=)
-                   (member api snapshot :test #'string=))
-        (violation "07" "glossary API ~A must appear in both package exports and the export-surface snapshot for ~A"
+                   (member api (package-info-exports package-record)
+                           :test (function string=)))
+        (violation "07"
+                   "glossary API ~A is not exported by feature package ~A"
                    api (feature-domain-package feature))))))) (if *violations*
         (report-main 1)
         (progn

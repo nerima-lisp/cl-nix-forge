@@ -169,6 +169,13 @@
 (progn
   (run-feature-case "feature-lint-07-glossary-export" "violation-07"
                     "[feature-lint:glossary-export]")
+  (run-feature-case "feature-lint-07-export-without-facade-export"
+                    "glossary-feature-export-contract"
+                    nil)
+  (run-feature-case "feature-lint-07-api-not-exported"
+                    "glossary-feature-export-contract"
+                    "[feature-lint:glossary-export]"
+                    "docs/glossary-unexported.md")
   (run-feature-case "feature-lint-package-designators-facade-outside"
                     "package-designators"
                     nil)
