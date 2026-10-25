@@ -346,6 +346,65 @@
                  "[orphan-tests:missing-component]")
 (progn
   (run-orphan-case "orphan-tests-empty" "empty" "[orphan-tests:empty]")
+  (run-orphan-case "orphan-tests-asd-non-system-forms" "asd-non-system-forms" nil)
+  (run-orphan-case "orphan-tests-asd-nested-defsystem" "asd-nested-defsystem" "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-asd-non-cl-quote-eval"
+                 "asd-non-cl-quote-eval"
+                 "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-three-segment-system-name"
+                 "three-segment-system-name" nil)
+  (run-orphan-case "orphan-tests-asd-direct-nested-reference"
+                 "asd-direct-nested-reference"
+                 "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-asd-dynamic-find-symbol"
+                 "asd-dynamic-find-symbol"
+                 "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-referenced-support-file" "referenced-support-file" nil)
+  (progn
+  (run-orphan-case "orphan-tests-asd-funcall-find-symbol"
+                  "asd-funcall-find-symbol"
+                  "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-asd-apply-find-symbol"
+                  "asd-apply-find-symbol"
+                  "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-asd-computed-defsystem"
+                  "asd-computed-defsystem"
+                  "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-asd-funcall-eval-defsystem"
+                  "asd-funcall-eval-defsystem"
+                  "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-asd-symbol-function-eval-defsystem"
+                  "asd-symbol-function-eval-defsystem"
+                  "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-asd-fdefinition-eval-defsystem"
+                  "asd-fdefinition-eval-defsystem"
+                  "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-asd-quoted-computed-defsystem"
+                  "asd-quoted-computed-defsystem"
+                  "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-asd-variable-eval-defsystem"
+                  "asd-variable-eval-defsystem"
+                  "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-asd-funcall-computed-defsystem"
+                  "asd-funcall-computed-defsystem"
+                  "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-asd-apply-computed-defsystem"
+                  "asd-apply-computed-defsystem"
+                  "contains a nested or computed DEFSYSTEM form")
+  (run-orphan-case "orphan-tests-unreturned-function-path"
+                  "unreturned-function-path"
+                  "[orphan-tests:unregistered]")
+  (run-orphan-case "orphan-tests-unreferenced-pathname"
+                  "unreferenced-pathname"
+                  "[orphan-tests:unregistered]")
+  (run-orphan-case "orphan-tests-unreferenced-merge-pathname"
+                  "unreferenced-merge-pathname"
+                  "[orphan-tests:unregistered]")
+  (run-orphan-case "orphan-tests-unreferenced-nested-pathname"
+                  "unreferenced-nested-pathname"
+                  "[orphan-tests:unregistered]"))
+  (run-orphan-case "orphan-tests-unreferenced-literal-path"
+                   "unreferenced-literal-path" "[orphan-tests:unregistered]")
   (run-case "orphan-tests-unknown-leading-option"
             "lib/checks/orphan-tests.lisp"
             (append (quote ("--unrecognized-flag" "ignored"))
