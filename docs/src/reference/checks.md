@@ -40,6 +40,21 @@ export surface without executing its Lisp source or tests.
 7. Glossary key types and functions are exported by the feature package and
    included in the expected export surface.
 
+The glossary `Package` field is a comma-separated list containing the
+feature's domain package and, when configured, its infrastructure package.
+Feature-lint checks that this list matches `:domain-package` and the optional
+`:infra-package` in `featureDefinitions`.
+
+Feature-lint reads `.lisp` files recursively under each feature's declared
+`:source-dirs` and `:test-dir`. It also reads `.asd` files under the source
+root as data, follows literal `:components` and nested `:module` entries, and
+checks `:file`, `:cl-source-file`, and `cl-source-file.<type>` components for
+facade `defpackage` forms. A supported `:default-component-class` can identify
+the source-file type for a `:file` component. The scanner skips `:static-file`
+components. It emits an `unverified` diagnostic and fails the check when it
+cannot classify a custom component type or when a source component resolves
+outside the source root.
+
 The scanner parses source as data without evaluating Lisp forms or interning
 package names. It accepts standard Common Lisp reader syntax. For `#+` and
 `#-`, it parses the feature expression and scans the following form without
@@ -94,10 +109,8 @@ string containing the changelog heading anchor. For example:
  (:symbol :remove "cl-cc/ast" "cl-cc/ast/nodes" "cl-cc/ast/nodes" "OLD-NODE" "CHANGELOG.md#anchor"))
 ```
 
-`:keep` rows contain the facade, feature, home-package, and symbol names.
-`:add` and `:remove` rows also require a `CHANGELOG.md#...` anchor. For each
-glossary API, feature-lint checks that the symbol appears in the source package's
-exports and in the snapshot built from `:keep` and `:add` rows. Each
+For each glossary API, feature-lint checks that the symbol appears in the
+source package's exports and in the snapshot built from `:keep` and `:add` rows. Each
 repository's snapshot test owns the full comparison between facade exports and
 their home packages.
 
@@ -127,30 +140,64 @@ checks.${system}.feature-lint = cl.mkFeatureLintCheck {
 
 Compare the Lisp files under configured test roots with the files registered
 by the named ASDF test systems. The builder combines all listed systems
-before comparing the sets in both directions, so a registered file must
-exist under a root and every `.lisp` file under a root must be registered.
+before comparing the sets in both directions. Registered files must exist
+under a root, and every other `.lisp` file must be registered or allowlisted;
+files whose registration cannot be determined are reported as unverified.
 
 All roots and allowlist entries are relative to `src`. The check reads the
 ASDF test-system declarations and source tree; it does not run the test
 systems.
 
 The static reader accepts literal `defsystem` declarations and recursively
-follows literal `:module`, `:file`, `:cl-source-file`, and `:static-file`
-components. Unsupported forms, options, or component kinds fail closed. Each
-allowlist path must name an existing `.lisp` file under a configured root; it
-cannot suppress a missing registered component.
+follows literal `:module` entries. Literal `:file` and `:cl-source-file`
+components count as Lisp registrations; `:static-file` components do not
+register Lisp test files. The checker validates system and component option
+names against the sets supported for each declaration kind in the
+[ASDF §6.3 system grammar](https://asdf.common-lisp.dev/asdf.html#The-defsystem-grammar),
+plus the check's compatibility options. An unknown option on a standard
+declaration fails closed because the reader cannot infer how it changes the
+component tree or its paths. A custom component type or custom type-specific
+option whose file mapping is unknown produces an `unverified` diagnostic and
+fails the check. Files affected by that unknown mapping are excluded from the
+registered/unregistered comparison.
+
+The checker does not evaluate system- or component-level `:if-feature`
+conditions; literal source components count as registered regardless of the
+current feature set.
+
+Literal system names in `.asd` declarations may be simple or
+`master/subsystem`; the master of a complex system must match its `.asd`
+filename. A `--test-system` name may also contain multiple slash-separated
+segments, as in the package-inferred system `my-lib/src/utility` described in
+[ASDF §6.5](https://asdf.common-lisp.dev/asdf/The-package_002dinferred_002dsystem-extension.html).
+The checker accepts such names, but does not statically map package-inferred
+components. A selected package-inferred system produces an `unverified`
+diagnostic and fails the check; all `.lisp` files under the configured test
+roots are excluded from the registered/unregistered comparison because the
+checker cannot identify which files belong to that system.
+Component names follow ASDF's simple name rules: strings are lowercase,
+symbols are lowercased, and underscores or `/` are not allowed. Path resolution
+follows
+[ASDF §6.3.9 pathname specifiers](https://asdf.common-lisp.dev/asdf.html#Pathname-specifiers):
+literal names and relative pathnames resolve against the parent. File names
+given as strings or symbols use the default `.lisp` type, while a pathname
+object's explicit type is retained; only `.lisp` files are compared. Absolute
+or logical pathnames that cannot be mapped to a repository-relative file
+produce an `unverified` diagnostic and fail the check. Each allowlist path must
+name an existing `.lisp` file under a configured root; it cannot suppress a
+missing registered component.
 
 | Argument | Default | Effect |
 |---|---|---|
 | `src` | required | Path or absolute path string for the source tree containing ASDF systems and test files |
 | `testRoots` | required | Non-empty list of relative directories whose `.lisp` files are compared with ASDF components |
-| `testSystems` | required | Non-empty list of ASDF test-system names; components from all systems are combined before comparison |
+| `testSystems` | required | Non-empty list of ASDF test-system names passed to the checker as `--test-system`; components from all systems are combined before comparison |
 | `allowlist` | `[ ]` | Existing `.lisp` paths under configured roots that suppress only the unregistered-file diagnostic |
 | `name` | `"orphan-tests"` | Check derivation name |
 
 Some repositories have multiple test systems with files under the same test
-root. List each system so the builder combines their components before
-comparing them with that root:
+root. For example, list each system so the builder compares their combined
+components with that root:
 
 ```nix
 checks.${system}.orphan-tests = cl.mkOrphanTestCheck {

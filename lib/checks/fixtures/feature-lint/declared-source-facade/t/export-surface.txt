@@ -1,0 +1,4 @@
+((:symbol :keep "cl-cc/target" "fixture/valid/nodes"
+  "fixture/valid/nodes" "MAKE-NODE")
+ (:symbol :keep "cl-cc/target" "fixture/valid/nodes"
+  "fixture/valid/nodes" "NODE"))
