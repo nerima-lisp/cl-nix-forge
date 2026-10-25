@@ -1865,8 +1865,6 @@
               source-feature (package-info-feature defined))))
   ;; Every observed package edge must be declared; same-feature edges are
   ;; local package relationships and are checked separately for the infra rule.
-  ;; The glossary's named package and APIs are compared to both static
-  ;; DEFPACKAGE declarations and the checked-in export-surface snapshot.
   (when source-info
     (dolist (used (package-info-uses source-info))
       (let ((target (gethash used package-records)))
