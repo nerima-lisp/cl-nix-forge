@@ -37,20 +37,23 @@ export surface without executing its Lisp source or tests.
    permits none and requires that file's list to be empty.
 6. A domain package does not depend directly on its feature's infrastructure
    package.
-7. Glossary key types and functions are exported by the feature package and
-   included in the expected export surface.
+7. Glossary key types and functions are exported by the feature's domain
+   package.
 
 The glossary `Package` field is a comma-separated list containing the
 feature's domain package and, when configured, its infrastructure package.
 Feature-lint checks that this list matches `:domain-package` and the optional
 `:infra-package` in `featureDefinitions`.
+`:facade-packages` are the packages whose public exports are checked separately
+by the repository's snapshot contract.
 
 Feature-lint reads `.lisp` files recursively under each feature's declared
 `:source-dirs` and `:test-dir`. It also reads `.asd` files under the source
 root as data, follows literal `:components` and nested `:module` entries, and
 checks `:file`, `:cl-source-file`, and `cl-source-file.<type>` components for
-facade `defpackage` forms. A supported `:default-component-class` can identify
-the source-file type for a `:file` component. The scanner skips `:static-file`
+facade `defpackage` forms. For `:file` components, the scanner recognizes
+`:cl-source-file`, `:cl-source-file.<type>`, and `:static-file` as
+`:default-component-class` values. It skips `:static-file`
 components. It emits an `unverified` diagnostic and fails the check when it
 cannot classify a custom component type or when a source component resolves
 outside the source root.
@@ -98,9 +101,12 @@ package, optional infrastructure package, and dependency slugs:
   :depends-on ()))
 ```
 
+`:domain-package` names the feature package whose exports check 07 reads.
+
 `exportSurface` is one list containing symbol records. Each `:keep` record
 contains the facade package, feature package, expected home package, and symbol
-name as strings. `:add` and `:remove` records have the same fields plus a
+name as strings. The expected home package identifies the package expected to
+own that symbol. `:add` and `:remove` records have the same fields plus a
 string containing the changelog heading anchor. For example:
 
 ```lisp
@@ -110,15 +116,18 @@ string containing the changelog heading anchor. For example:
 ```
 
 For each glossary API, feature-lint checks that the symbol appears in the
-source package's exports and in the snapshot built from `:keep` and `:add` rows. Each
-repository's snapshot test owns the full comparison between facade exports and
-their home packages.
+feature's domain package exports. `mkFeatureLintCheck` reads `exportSurface` to
+validate its records, but it does not compare actual facade exports against
+them. A repository-level snapshot check performs that comparison and checks
+facade exports against their home packages.
 
 `legacyInternalRefs` is a list of records shaped like
 `(:ref "t/nodes/internal-check.lisp" "cl-cc/ast" "%NODE-COUNT" 2)`, where
 the last value is the maximum number of matching references. The
 `featureDefinitions`, `exportSurface`, and `legacyInternalRefs` files each
 contain one S-expression and are read as data with reader evaluation disabled.
+
+The example assumes that these paths exist under `src`:
 
 ```nix
 checks.${system}.feature-lint = cl.mkFeatureLintCheck {
@@ -144,14 +153,40 @@ before comparing the sets in both directions. Registered files must exist
 under a root, and every other `.lisp` file must be registered or allowlisted;
 files whose registration cannot be determined are reported as unverified.
 
-All roots and allowlist entries are relative to `src`. The check reads the
-ASDF test-system declarations and source tree; it does not run the test
-systems.
+All roots and allowlist entries are relative to `src`.
 
-The static reader accepts literal `defsystem` declarations and recursively
-follows literal `:module` entries. Literal `:file` and `:cl-source-file`
-components count as Lisp registrations; `:static-file` components do not
-register Lisp test files. The checker validates system and component option
+The static reader scans every `.asd` file under `src` recursively, including
+files in nested package directories and files that another `.asd` loads. It
+reads forms as data and never evaluates them. It accepts `in-package`, records
+top-level `asdf:defsystem` and `defsystem` declarations, and skips other
+top-level forms only when they contain no `DEFSYSTEM` reference. A nested or
+computed `DEFSYSTEM` reference fails the check. The reader supports only a
+static subset of valid ASDF forms, so some `.asd` files that compute system or
+component declarations may fail instead of being interpreted. It recursively
+follows literal `:module` entries. Literal `:file` and `:cl-source-file` components
+count as Lisp registrations; `:static-file` components do not register Lisp
+test files.
+
+Existing `.lisp` files named by literal strings in path forms inside recognized
+file operations in registered test sources are treated as support files rather
+than unregistered tests. Recognized operations are `load`, `open`,
+`probe-file`, `truename`, `delete-file`, `rename-file`,
+`uiop:read-file-lines`, and `uiop:read-file-string`, including their recognized
+Common Lisp package-qualified names; path forms are `pathname` and
+`merge-pathnames`, including their Common Lisp package-qualified names, and
+`asdf:system-relative-pathname`. A literal string is collected when its chain
+of enclosing forms reaches a recognized file operation through recognized path
+forms, or when a path form is the final expression returned from a `defun` or
+`lambda`. Within a function body, only the final body form qualifies as a
+returned path. Relative strings resolve against the registered test source's
+directory and the source root. Only paths
+that resolve to existing files under configured test roots qualify. The checker
+does not evaluate path-building forms. A file reached only through a computed
+path is not recognized as support. A literal path that is not part of a
+recognized file-operation chain or returned by a path helper also remains
+subject to the unregistered-file and allowlist check.
+
+The checker validates system and component option
 names against the sets supported for each declaration kind in the
 [ASDF §6.3 system grammar](https://asdf.common-lisp.dev/asdf.html#The-defsystem-grammar),
 plus the check's compatibility options. An unknown option on a standard
@@ -165,16 +200,18 @@ The checker does not evaluate system- or component-level `:if-feature`
 conditions; literal source components count as registered regardless of the
 current feature set.
 
-Literal system names in `.asd` declarations may be simple or
-`master/subsystem`; the master of a complex system must match its `.asd`
-filename. A `--test-system` name may also contain multiple slash-separated
-segments, as in the package-inferred system `my-lib/src/utility` described in
+Literal system names in `.asd` declarations may be simple or contain multiple
+slash-separated segments, such as `master/subsystem` or
+`master/subsystem/nested`; the first segment of a complex system must match its
+`.asd` filename. A `--test-system` name may also contain multiple
+slash-separated segments, as in the package-inferred system
+`my-lib/src/utility` described in
 [ASDF §6.5](https://asdf.common-lisp.dev/asdf/The-package_002dinferred_002dsystem-extension.html).
-The checker accepts such names, but does not statically map package-inferred
-components. A selected package-inferred system produces an `unverified`
-diagnostic and fails the check; all `.lisp` files under the configured test
-roots are excluded from the registered/unregistered comparison because the
-checker cannot identify which files belong to that system.
+The checker accepts that name syntax but cannot statically map
+package-inferred components. Selecting one produces an `unverified` diagnostic
+and fails the check. Because the checker cannot identify which files belong to
+that system, it excludes all `.lisp` files under configured test roots from the
+registered/unregistered comparison.
 Component names follow ASDF's simple name rules: strings are lowercase,
 symbols are lowercased, and underscores or `/` are not allowed. Path resolution
 follows
@@ -191,13 +228,11 @@ missing registered component.
 |---|---|---|
 | `src` | required | Path or absolute path string for the source tree containing ASDF systems and test files |
 | `testRoots` | required | Non-empty list of relative directories whose `.lisp` files are compared with ASDF components |
-| `testSystems` | required | Non-empty list of ASDF test-system names passed to the checker as `--test-system`; components from all systems are combined before comparison |
+| `testSystems` | required | Non-empty list of ASDF test-system names passed to the checker as `--test-system` |
 | `allowlist` | `[ ]` | Existing `.lisp` paths under configured roots that suppress only the unregistered-file diagnostic |
 | `name` | `"orphan-tests"` | Check derivation name |
 
-Some repositories have multiple test systems with files under the same test
-root. For example, list each system so the builder compares their combined
-components with that root:
+Example with two test systems sharing a test root:
 
 ```nix
 checks.${system}.orphan-tests = cl.mkOrphanTestCheck {
@@ -214,10 +249,6 @@ A named `checks.<system>.<name>` for a derivation's `asdf:test-system` path.
 ```nix
 checks.${system}.my-app = cl.mkTestCheck myApp;
 ```
-
-It is exactly `drv.enableCheck`. The function gives each enabled check a named
-`checks` attribute instead of leaving a bare `.enableCheck` property access in
-the flake.
 
 For a suite that cannot be driven by an enclosing `test-op`, or that needs a
 time limit, use `mkScriptCheck`.
@@ -294,10 +325,9 @@ preserves spaces and shell metacharacters such as `>` inside an argument rather
 than letting the shell interpret them. A non-list, empty, or non-string-element
 `command` is an evaluation error.
 
-Every artifact is asserted **present and non-empty**. Presence alone is not
-the property anyone wants: a reporter that opens its output file and then
-dies leaves a zero-byte JSON document behind, and `test -e` is perfectly
-happy with it. A directory artifact is non-empty when it has at least one
+Every artifact is asserted **present and non-empty**. A reporter that opens
+its output file and then dies leaves a zero-byte JSON document behind, and
+`test -e` is perfectly happy with it. A directory artifact is non-empty when it has at least one
 entry — `test -s` on a directory reports its inode size and is meaningless.
 
 Artifacts keep their relative layout under `$out`, so a check writing

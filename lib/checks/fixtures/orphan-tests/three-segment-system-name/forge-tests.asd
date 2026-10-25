@@ -1,0 +1,13 @@
+(in-package #:asdf-user)
+
+(asdf:defsystem "forge-tests/alpha/deep"
+  :pathname "t/alpha/"
+  :components ())
+
+(asdf:defsystem "forge-tests/alpha"
+  :pathname "t/alpha/"
+  :components ((:file "test-alpha")))
+
+(asdf:defsystem "forge-tests/beta"
+  :pathname "t/beta/"
+  :components ((:file "test-beta")))
