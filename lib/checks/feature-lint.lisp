@@ -1207,7 +1207,7 @@
              (char= (char trimmed (1- (length trimmed))) #\`))
         (subseq trimmed 1 (1- (length trimmed)))
         trimmed)))
-(defun glossary-api-values (value)
+(defun glossary-list-values (value)
   (let* ((value (trim-space value))
          (whole-span-p
            (and (> (length value) 1)
@@ -1296,105 +1296,289 @@
         (records nil)
         (packages (make-hash-table :test #'equal))
         (source-files nil))
-    (dolist (feature features)
-      (dolist (relative (feature-source-dirs feature))
-        (let ((directory (resolve-path root relative)))
-          (unless (uiop:directory-exists-p directory)
-            (violation "01" "source directory ~A does not exist" relative))
-          (when (uiop:directory-exists-p directory)
-            (dolist (file (recursive-files directory))
-              (when (lisp-file-p file)
-                (push (cons (relative-pathname root file) feature) source-files))))))
-      (let ((test-path (feature-test-dir feature)))
-        (let ((directory (resolve-path root test-path)))
-          (unless (uiop:directory-exists-p directory)
-            (violation "01" "feature test directory ~A does not exist" test-path))
-          (when (uiop:directory-exists-p directory)
-            (let ((tests (remove-if-not #'lisp-file-p (recursive-files directory))))
-              (when (null tests)
-                (violation "01" "feature test directory ~A has no .lisp files" test-path)))))))
-    (setf source-files (nreverse source-files))
-    (dolist (feature features)
-      (dolist (directory (append (feature-source-dirs feature) (list (feature-test-dir feature))))
-        (let ((resolved (resolve-path root directory)))
-          (when (uiop:directory-exists-p resolved)
-            (dolist (file (recursive-files resolved))
-              (when (lisp-file-p file)
-                (let ((relative (relative-pathname root file)))
-                  (unless (assoc relative file-paths :test #'string=)
-                    (push (cons relative feature) file-paths)))))))))
-    (setf file-paths (nreverse file-paths))
-    (dolist (record file-paths)
-      (let* ((relative (car record))
-             (feature (cdr record))
-             (path (resolve-path root relative))
-             (forms (handler-case
-                        (parse-source-tokens (scan-source (uiop:read-file-string path) relative) relative)
-                      (error (condition)
-                        (fail-closed "source syntax error: ~A" condition))))
-             (defs (find-forms forms '("defpackage")))
-             (ins (find-forms forms '("in-package")))
-             (declared-names nil))
-        (dolist (form defs)
-          (let* ((children (syntax-node-children form))
-                 (package (and (second children) (node-designator (second children)))))
-            (unless package
-              (source-syntax-error relative (syntax-node-line form)
-                                   "defpackage has no literal package name"))
-            (push (register-package-form form relative packages package) declared-names)))
-        (push (list :path relative :feature feature :forms forms
-                    :packages (nreverse declared-names) :in-packages ins)
-              records)))
-    (let* ((feature-paths
-             (loop for feature in features
-                   append (append (feature-source-dirs feature)
-                                  (list (feature-test-dir feature)))))
-           (facade-packages
-             (remove-duplicates
-              (loop for feature in features append (feature-facade-packages feature))
-              :test #'string=))
-           (source-roots
-             (remove-duplicates
-              (remove "" (mapcar #'path-parent
-                                 (loop for feature in features
-                                       append (feature-source-dirs feature)))
-                      :test #'string=)
-              :test #'string=))
-           (owned-paths (mapcar #'car file-paths))
-           (facade-files nil))
-      (dolist (source-root source-roots)
-        (let ((directory (resolve-path root source-root)))
-          (when (uiop:directory-exists-p directory)
-            (dolist (file (recursive-files directory))
-              (when (lisp-file-p file)
-                (let ((relative (relative-pathname root file)))
-                  (unless (or
-                              (not (string= (path-parent relative) source-root))
-                              (not (member (path-base relative)
-                                   '("package.lisp" "packages.lisp")
-                                   :test #'string=))
-                              (member relative owned-paths :test #'string=)
-                              (some (lambda (feature-path)
-                                      (path-under-p relative feature-path))
-                                    feature-paths)
-                              (member relative facade-files :test #'string=))
-                    (push relative facade-files))))))))
-      (dolist (relative (nreverse facade-files))
-        (let* ((path (resolve-path root relative))
+    (labels ((proper-list-length (value)
+               (ignore-errors (list-length value)))
+             (project-relative-path (path)
+               (handler-case
+                   (let ((relative (relative-pathname root (truename path))))
+                     (if (string= relative "")
+                         ""
+                         (safe-relative-path relative)))
+                 (error () nil)))
+             (asdf-files ()
+               (let ((files nil)
+                     (visited nil))
+                 (labels ((walk (directory)
+                            (let ((relative (project-relative-path directory)))
+                              (when (and relative
+                                         (not (member relative visited :test #'string=)))
+                                (push relative visited)
+                                (dolist (file (uiop:directory-files directory))
+                                  (when (and (pathname-type file)
+                                             (string-equal (pathname-type file) "asd")
+                                             (project-relative-path file))
+                                    (push file files)))
+                                (dolist (subdirectory (uiop:subdirectories directory))
+                                  (let* ((parts (pathname-directory subdirectory))
+                                         (name (and parts (car (last parts)))))
+                                    (unless (member name '(".git" ".jj" ".hg" ".svn")
+                                                    :test #'string-equal)
+                                      (walk subdirectory))))))))
+                   (walk (uiop:ensure-directory-pathname root))
+                 (nreverse files))))
+             (asdf-option (options key context)
+                          (let ((length (proper-list-length options))
+                                (found-p nil)
+                                (found-value nil))
+                            (unless (and length (evenp length))
+                              (fail-closed "~A has malformed ASDF options" context))
+                            (loop for tail on options by #'cddr
+                                  for candidate = (car tail)
+                                  do (unless (keywordp candidate)
+                                       (fail-closed "~A has a non-keyword ASDF option ~S"
+                                                    context candidate))
+                                  (when (eq candidate key)
+                                    (when found-p
+                                      (fail-closed "~A repeats ASDF option ~S" context key))
+                                    (setf found-p t
+                                          found-value (cadr tail))))
+                            (values found-value found-p)))
+             (static-pathname (parent specifier kind file-type context)
+                              (let* ((pathname
+                                      (cond
+                                       ((pathnamep specifier) specifier)
+                                       ((or (stringp specifier) (symbolp specifier))
+                                        (uiop:parse-unix-namestring
+                                         (if (symbolp specifier)
+                                             (string-downcase (symbol-name specifier))
+                                           specifier)
+                                         :type (if (eq kind :module) :directory file-type)))
+                                       (t
+                                        (fail-closed "~A has a nonliteral ASDF pathname ~S"
+                                                     context specifier))))
+                                     (merged (uiop:merge-pathnames* pathname parent)))
+                                (if (eq kind :module)
+                                    (uiop:ensure-directory-pathname merged)
+                                  merged)))
+             (component-pathname (parent component kind file-type context)
+                                 (multiple-value-bind (pathname pathname-p)
+                                     (asdf-option (cddr component) :pathname context)
+                                   (static-pathname parent
+                                                    (if pathname-p pathname (second component))
+                                                    kind file-type context)))
+             (component-type-info (type default-class context)
+                                  (unless (symbolp type)
+                                    (fail-closed "~A has a non-symbol ASDF component type ~S"
+                                                 context type))
+                                  (labels ((source-type (class role)
+                                             (unless (symbolp class)
+                                               (fail-closed "~A has a nonliteral ASDF ~A ~S"
+                                                            context role class))
+                                             (let ((name (string-downcase (symbol-name class))))
+                                               (cond
+                                                 ((string= name "static-file")
+                                                  (values :static-file nil))
+                                                 ((string= name "cl-source-file")
+                                                  (values :source "lisp"))
+                                                 ((starts-with name "cl-source-file.")
+                                                  (let ((file-type
+                                                          (subseq name
+                                                                  (length "cl-source-file."))))
+                                                    (unless (plusp (length file-type))
+                                                      (fail-closed
+                                                       "~A has an empty ASDF source pathname type"
+                                                       context))
+                                                    (values :source file-type)))
+                                                 (t
+                                                  (fail-closed
+                                                   "[feature-lint:unverified] ~A cannot classify ASDF ~A ~S"
+                                                   context role class))))))
+                                    (let ((name (string-downcase (symbol-name type))))
+                                      (cond
+                                        ((string= name "module")
+                                         (values :module nil))
+                                        ((string= name "static-file")
+                                         (values :static-file nil))
+                                        ((string= name "file")
+                                         (if default-class
+                                             (source-type default-class
+                                                          "default component class")
+                                             (values :source "lisp")))
+                                        ((or (string= name "cl-source-file")
+                                             (starts-with name "cl-source-file."))
+                                         (source-type type "component type"))
+                                        (t
+                                         (fail-closed
+                                          "[feature-lint:unverified] ~A uses unrecognized ASDF component type ~S; source behavior cannot be determined statically"
+                                          context type))))))
+             (collect-component-paths (components parent default-class context)
+                                      (let ((length (proper-list-length components))
+                                            (paths nil))
+                                        (unless length
+                                          (fail-closed "~A has nonliteral ASDF :components" context))
+                                        (dolist (component components)
+                                          (let ((component-length (proper-list-length component)))
+                                            (unless (and component-length (>= component-length 2)
+                                                         (symbolp (first component)))
+                                              (fail-closed "~A has malformed ASDF component ~S"
+                                                           context component))
+                                            (multiple-value-bind (kind file-type)
+                                                (component-type-info (first component) default-class context)
+                                              (let ((path (component-pathname parent component kind file-type context)))
+                                                (setf paths
+                                                      (nconc paths
+                                                             (case kind
+                                                               (:module
+                                                                (multiple-value-bind (children children-p)
+                                                                    (asdf-option (cddr component) :components context)
+                                                                  (multiple-value-bind (module-class module-class-p)
+                                                                      (asdf-option (cddr component)
+                                                                                   :default-component-class context)
+                                                                    (if children-p
+                                                                        (collect-component-paths
+                                                                         children path
+                                                                         (if module-class-p module-class default-class)
+                                                                         context)
+                                                                      nil))))
+                                                               (:source (list path))
+                                                               (:static-file nil))))))))
+                                        paths))
+             (component-relative-path (path context)
+                                 (unless (probe-file path)
+                                   (fail-closed "~A declares missing ASDF source component ~A"
+                                                context path))
+                                 (let ((relative (project-relative-path path)))
+                                   (unless relative
+                                     (fail-closed
+                                      "[feature-lint:unverified] ~A ASDF source component is outside the project root: ~A"
+                                      context path))
+                                   relative))
+             (record-facades-from-file (relative facade-packages owned-paths)
+               (unless (member relative owned-paths :test #'string=)
+                 (let* ((path (resolve-path root relative))
+                        (forms (handler-case
+                                   (parse-source-tokens
+                                    (scan-source (uiop:read-file-string path) relative)
+                                    relative)
+                                 (error (condition)
+                                   (fail-closed "source syntax error: ~A" condition))))
+                        (defs (find-forms forms '("defpackage"))))
+                   (dolist (form defs)
+                     (let* ((children (syntax-node-children form))
+                            (package (and (second children)
+                                          (node-designator (second children)))))
+                       (unless package
+                         (source-syntax-error relative (syntax-node-line form)
+                                              "defpackage has no literal package name"))
+                       (when (member package facade-packages :test #'string=)
+                         (register-package-form form relative packages package)))))))
+             (scan-asdf-facades (facade-packages owned-paths)
+                                (dolist (asd-file (asdf-files))
+                                  (let* ((context (or (project-relative-path asd-file)
+                                                      (namestring asd-file)))
+                                         (forms (handler-case
+                                                    (read-safe-forms asd-file)
+                                                  (error (condition)
+                                                         (fail-closed "ASDF syntax error in ~A: ~A"
+                                                                      context condition)))))
+                                    (dolist (form forms)
+                                      (when (and (consp form)
+                                                 (symbolp (first form))
+                                                 (string-equal (symbol-name (first form)) "DEFSYSTEM"))
+                                        (let ((form-length (proper-list-length form)))
+                                          (unless (and form-length (>= form-length 2))
+                                            (fail-closed "~A has malformed ASDF defsystem form ~S"
+                                                         context form))
+                                          (unless (or (stringp (second form)) (symbolp (second form)))
+                                            (fail-closed "~A has nonliteral ASDF system designator ~S"
+                                                         context (second form)))
+                                          (let* ((options (cddr form))
+                                                 (system-base (uiop:pathname-directory-pathname asd-file)))
+                                            (multiple-value-bind (pathname pathname-p)
+                                                (asdf-option options :pathname context)
+                                              (when pathname-p
+                                                (setf system-base
+                                                      (static-pathname system-base pathname :module nil context))))
+                                            (multiple-value-bind (default-class default-class-p)
+                                                (asdf-option options :default-component-class context)
+                                              (when default-class-p
+                                                (unless (symbolp default-class)
+                                                  (fail-closed "~A has nonliteral :default-component-class ~S"
+                                                               context default-class)))
+                                              (multiple-value-bind (components components-p)
+                                                  (asdf-option options :components context)
+                                                (when components-p
+                                                  (dolist (path
+                                                           (collect-component-paths
+                                                            components system-base
+                                                            (if default-class-p default-class nil) context))
+                                                    (let ((relative (component-relative-path path context)))
+                                                      (when relative
+                                                        (record-facades-from-file relative
+                                                                                  facade-packages
+                                                                                  owned-paths)))))))))))))))
+      (dolist (feature features)
+        (dolist (relative (feature-source-dirs feature))
+          (let ((directory (resolve-path root relative)))
+            (unless (uiop:directory-exists-p directory)
+              (violation "01" "source directory ~A does not exist" relative))
+            (when (uiop:directory-exists-p directory)
+              (dolist (file (recursive-files directory))
+                (when (lisp-file-p file)
+                  (push (cons (relative-pathname root file) feature) source-files))))))
+        (let ((test-path (feature-test-dir feature)))
+          (let ((directory (resolve-path root test-path)))
+            (unless (uiop:directory-exists-p directory)
+              (violation "01" "feature test directory ~A does not exist" test-path))
+            (when (uiop:directory-exists-p directory)
+              (let ((tests (remove-if-not #'lisp-file-p (recursive-files directory))))
+                (when (null tests)
+                  (violation "01" "feature test directory ~A has no .lisp files"
+                             test-path)))))))
+      (setf source-files (nreverse source-files))
+      (dolist (feature features)
+        (dolist (directory (append (feature-source-dirs feature)
+                                   (list (feature-test-dir feature))))
+          (let ((resolved (resolve-path root directory)))
+            (when (uiop:directory-exists-p resolved)
+              (dolist (file (recursive-files resolved))
+                (when (lisp-file-p file)
+                  (let ((relative (relative-pathname root file)))
+                    (unless (assoc relative file-paths :test #'string=)
+                      (push (cons relative feature) file-paths)))))))))
+      (setf file-paths (nreverse file-paths))
+      (dolist (record file-paths)
+        (let* ((relative (car record))
+               (feature (cdr record))
+               (path (resolve-path root relative))
                (forms (handler-case
-                          (parse-source-tokens (scan-source (uiop:read-file-string path) relative) relative)
+                          (parse-source-tokens
+                           (scan-source (uiop:read-file-string path) relative)
+                           relative)
                         (error (condition)
                           (fail-closed "source syntax error: ~A" condition))))
-               (defs (find-forms forms '("defpackage"))))
+               (defs (find-forms forms '("defpackage")))
+               (ins (find-forms forms '("in-package")))
+               (declared-names nil))
           (dolist (form defs)
             (let* ((children (syntax-node-children form))
-                   (package (and (second children) (node-designator (second children)))))
+                   (package (and (second children)
+                                 (node-designator (second children)))))
               (unless package
                 (source-syntax-error relative (syntax-node-line form)
                                      "defpackage has no literal package name"))
-              (when (member package facade-packages :test #'string=)
-                (register-package-form form relative packages package)))))))
-    (values (nreverse records) packages source-files)))
+              (push (register-package-form form relative packages package)
+                    declared-names)))
+          (push (list :path relative :feature feature :forms forms
+                      :packages (nreverse declared-names) :in-packages ins)
+                records)))
+      (let ((facade-packages
+              (remove-duplicates
+               (loop for feature in features append (feature-facade-packages feature))
+               :test #'string=))
+            (owned-paths (mapcar #'car file-paths)))
+        (scan-asdf-facades facade-packages owned-paths))
+      (values (nreverse records) packages source-files))))
 (defun parse-defpackage-options (form package-record)
   (let ((children (cddr (syntax-node-children form))))
     (dolist (option children)
@@ -1826,20 +2010,38 @@
       (let* ((slug (feature-slug feature))
        (entry (gethash slug glossary))
        (package-value (and entry (gethash "Package" entry)))
-       (package-name (and package-value
-                          (normalize-name (markdown-value package-value))))
+       (package-names
+        (and package-value
+             (mapcar (function normalize-name)
+                     (glossary-list-values package-value))))
        (api-names (append
                    (when entry
-                     (glossary-api-values (or (gethash "Key types" entry) "")))
+                     (glossary-list-values (or (gethash "Key types" entry) "")))
                    (when entry
-                     (glossary-api-values (or (gethash "Key functions" entry) "")))))
+                     (glossary-list-values (or (gethash "Key functions" entry) "")))))
        (package-record (gethash (feature-domain-package feature) package-records))
        (snapshot (gethash (feature-domain-package feature) exports)))
   (when (and entry (not package-value))
     (violation "01" "glossary entry ~A has no Package field" slug))
-  (when (and package-name (not (string= package-name (feature-domain-package feature))))
-    (violation "01" "glossary feature ~A names package ~A, expected ~A"
-               slug package-name (feature-domain-package feature)))
+  (let ((declared-packages
+        (append
+         (list (feature-domain-package feature))
+         (when (feature-infra-package feature)
+           (list (feature-infra-package feature))))))
+    (when (and package-value
+               (not
+                (and (= (length package-names) (length declared-packages))
+                     (every (lambda (package)
+                              (member package declared-packages
+                                      :test (function string=)))
+                            package-names)
+                     (every (lambda (package)
+                              (member package package-names
+                                      :test (function string=)))
+                            declared-packages))))
+      (violation "01"
+                 "glossary feature ~A names packages ~{~A~^, ~}, expected ~{~A~^, ~}"
+                 slug package-names declared-packages)))
   (when (and entry (not (gethash "Key types" entry)))
     (violation "07" "glossary entry ~A has no Key types field" slug))
   (when (and entry (not (gethash "Key functions" entry)))

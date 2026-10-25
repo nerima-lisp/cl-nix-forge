@@ -94,12 +94,13 @@
    (loop for prefix in '("FR-" "W")
          append (list "--numbered-prefix" prefix))))
 
-(defun orphan-test-arguments (fixture)
+(defun orphan-test-arguments (fixture &optional systems)
   (append
    (list "--source-root" (fixture-root "orphan-tests" fixture)
          "--test-root" "t")
-   (loop for system in '("forge-tests/alpha" "forge-tests/beta")
+   (loop for system in (or systems '("forge-tests/alpha" "forge-tests/beta"))
          append (list "--test-system" system))))
+
 
 (defun run-case (name script arguments expected-marker
                  &optional (expected-exit-code (if expected-marker 1 0)))
@@ -145,11 +146,12 @@
             (feature-lint-arguments fixture glossary-path)
             marker))
 
-(defun run-orphan-case (label fixture marker)
+(defun run-orphan-case (label fixture marker &optional systems)
   (run-case label
             "lib/checks/orphan-tests.lisp"
-            (orphan-test-arguments fixture)
+            (orphan-test-arguments fixture systems)
             marker))
+
 
 (run-feature-case "feature-lint-valid" "valid" nil)
 (run-feature-case "feature-lint-01-feature-set" "violation-01"
@@ -170,6 +172,13 @@
   (run-feature-case "feature-lint-package-designators-facade-outside"
                     "package-designators"
                     nil)
+  (run-feature-case "feature-lint-glossary-multi-package"
+                    "glossary-multi-package"
+                    nil)
+  (run-feature-case "feature-lint-glossary-package-mismatch"
+                    "glossary-multi-package"
+                    "[feature-lint:feature-set]"
+                    "docs/glossary-single-package.md")
   (progn
     (run-feature-case "feature-lint-glossary-api-backticks"
                       "glossary-api-backticks"
@@ -334,7 +343,58 @@
             "lib/checks/orphan-tests.lisp"
             (append (quote ("--unrecognized-flag" "ignored"))
                     (orphan-test-arguments "multi-system-nested"))
-            "[orphan-tests:invalid] unknown option"))
+            "[orphan-tests:invalid] unknown option")
+  (run-feature-case "feature-lint-declared-source-facade" "declared-source-facade" nil)
+  (run-orphan-case "orphan-tests-standard-system-options" "standard-system-options/valid" nil)
+  (run-orphan-case "orphan-tests-string-pathname-default-type"
+                   "standard-system-options/string-pathname-default-type" nil)
+  (run-orphan-case "orphan-tests-pathname-object-type-override"
+                   "standard-system-options/pathname-object-type-override"
+                   "[orphan-tests:unregistered]")
+  (run-orphan-case "orphan-tests-pathname-object-without-type"
+                   "standard-system-options/pathname-object-without-type"
+                   "[orphan-tests:unregistered]")
+  (run-orphan-case "orphan-tests-custom-component-type"
+                   "standard-system-options/custom-component" "[orphan-tests:unverified]")
+  (run-orphan-case "orphan-tests-compatibility-options"
+                   "standard-system-options/compatibility-options" nil)
+  (run-orphan-case "orphan-tests-component-class-not-system"
+                   "standard-system-options/component-class-not-system"
+                   "[orphan-tests:invalid]")
+  (run-orphan-case "orphan-tests-unknown-system-option" "unknown-system-option"
+                   "[orphan-tests:invalid]")
+  (run-orphan-case "orphan-tests-unknown-component-option" "unknown-component-option"
+                   "[orphan-tests:invalid]")
+  (run-orphan-case "orphan-tests-invalid-system-name"
+                   "standard-system-options/invalid-system-name"
+                   "[orphan-tests:invalid]")
+  (run-orphan-case "orphan-tests-invalid-component-name"
+                   "standard-system-options/invalid-component-name"
+                   "[orphan-tests:invalid]")
+  (run-orphan-case "orphan-tests-wrong-complex-master"
+                   "standard-system-options/wrong-complex-master"
+                   "[orphan-tests:invalid]")
+  (progn
+  (run-case "orphan-tests-unportable-system-name"
+            "lib/checks/orphan-tests.lisp"
+            (list "--source-root"
+                  (fixture-root "orphan-tests"
+                                "standard-system-options/unportable-system-name")
+                  "--test-root" "t" "--test-system" "forge-tests*")
+            "[orphan-tests:unverified]")
+  (run-orphan-case "orphan-tests-package-inferred-nested-name"
+                   "package-inferred-system"
+                   "[orphan-tests:unverified]"
+                   '("forge-tests/alpha/test-alpha"
+                     "forge-tests/beta/test-beta")))
+
+  (run-case "orphan-tests-unportable-system-name"
+            "lib/checks/orphan-tests.lisp"
+            (list "--source-root"
+                  (fixture-root "orphan-tests"
+                                "standard-system-options/unportable-system-name")
+                  "--test-root" "t" "--test-system" "forge-tests*")
+            "[orphan-tests:unverified]"))
 
 (progn
   (let ((process
